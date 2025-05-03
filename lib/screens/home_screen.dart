@@ -24,12 +24,11 @@ class _HomeScreenState extends State<HomeScreen> {
   final PageController _pageController = PageController();
 
   void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-    _pageController.animateToPage(index,
-        duration: Duration(milliseconds: 700),
-        curve: Curves.easeInOut);
+    _pageController.animateToPage(
+      index,
+      duration: Duration(milliseconds: 300), // Smooth animation duration
+      curve: Curves.easeInOut, // Smooth animation curve
+    );
   }
 
   @override
@@ -43,7 +42,7 @@ class _HomeScreenState extends State<HomeScreen> {
           });
         },
         children: _screens,
-        physics: BouncingScrollPhysics(),
+        physics: PageScrollPhysics(), // Ensures smooth swiping without stopping midway
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
@@ -54,26 +53,26 @@ class _HomeScreenState extends State<HomeScreen> {
         unselectedFontSize: 0, // Hide the text of unselected tabs
         showSelectedLabels: true,
         showUnselectedLabels: false, // Hide the text of unselected tabs
+        type: BottomNavigationBarType.fixed, // Ensures smooth transitions
         items: [
           BottomNavigationBarItem(
             icon: Icon(Icons.chat),
-            label: _selectedIndex == 0 ? 'Chats' : '',
+            label: 'Chats',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.group),
-            label: _selectedIndex == 1 ? 'Groups' : '',
+            label: 'Groups',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.circle),
-            label: _selectedIndex == 2 ? 'Status' : '',
+            label: 'Status',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.person),
-            label: _selectedIndex == 3 ? 'Profile' : '',
+            label: 'Profile',
           ),
         ],
       ),
     );
   }
 }
-

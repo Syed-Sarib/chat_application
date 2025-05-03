@@ -12,6 +12,7 @@ class OtpVerificationScreen extends StatefulWidget {
 
 class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
   List<TextEditingController> otpControllers = List.generate(6, (_) => TextEditingController());
+  List<FocusNode> focusNodes = List.generate(6, (_) => FocusNode());
   Timer? _timer;
   int _secondsRemaining = 180;
   bool _canResend = false;
@@ -20,6 +21,11 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
   void initState() {
     super.initState();
     startTimer();
+
+    // Automatically focus the first box when the screen loads
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      FocusScope.of(context).requestFocus(focusNodes[0]);
+    });
   }
 
   void startTimer() {
@@ -57,6 +63,9 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
     for (var controller in otpControllers) {
       controller.dispose();
     }
+    for (var focusNode in focusNodes) {
+      focusNode.dispose();
+    }
     super.dispose();
   }
 
@@ -65,6 +74,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
       width: 48,
       child: TextField(
         controller: otpControllers[index],
+        focusNode: focusNodes[index],
         maxLength: 1,
         keyboardType: TextInputType.number,
         textAlign: TextAlign.center,
@@ -76,7 +86,9 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
         ),
         onChanged: (value) {
           if (value.isNotEmpty && index < 5) {
-            FocusScope.of(context).nextFocus();
+            FocusScope.of(context).requestFocus(focusNodes[index + 1]);
+          } else if (value.isEmpty && index > 0) {
+            FocusScope.of(context).requestFocus(focusNodes[index - 1]);
           }
         },
       ),
@@ -100,7 +112,6 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Animated Icon
               BounceInDown(
                 duration: Duration(milliseconds: 1200),
                 child: Icon(
@@ -110,7 +121,6 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                 ),
               ),
               SizedBox(height: 20),
-              // Animated Title
               FadeIn(
                 duration: Duration(milliseconds: 1500),
                 child: Text(
@@ -136,7 +146,6 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                 ),
               ),
               SizedBox(height: 40),
-              // OTP Input Fields
               SlideInUp(
                 duration: Duration(milliseconds: 1000),
                 child: Row(
@@ -145,7 +154,6 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                 ),
               ),
               SizedBox(height: 16),
-              // Timer
               FadeIn(
                 duration: Duration(milliseconds: 1200),
                 child: Text(
@@ -154,7 +162,6 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                 ),
               ),
               SizedBox(height: 24),
-              // Verify Button
               SlideInUp(
                 duration: Duration(milliseconds: 1400),
                 child: ElevatedButton(
@@ -175,7 +182,6 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                 ),
               ),
               SizedBox(height: 10),
-              // Resend OTP Button
               FadeIn(
                 duration: Duration(milliseconds: 1600),
                 child: TextButton(
