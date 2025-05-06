@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'conversation_screen.dart';
-
+import 'friend_search_screen.dart';
+import 'friend_request_screen.dart';
 class ChatScreen extends StatefulWidget {
   ChatScreen({super.key});
 
@@ -254,38 +255,50 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
           ),
         ),
         floatingActionButton: FloatingActionButton(
-          backgroundColor: Colors.blueAccent,
-          child: Icon(Icons.person_add, color: Colors.white),
-          onPressed: () {
-            showModalBottomSheet(
-              context: context,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-              ),
-              builder: (_) => Padding(
-                padding: const EdgeInsets.all(20),
-                child: Wrap(
-                  children: [
-                    ListTile(
-                      leading: Icon(Icons.search),
-                      title: Text('Search Friend'),
-                      onTap: () {
-                        Navigator.pop(context);
-                      },
-                    ),
-                    ListTile(
-                      leading: Icon(Icons.person_add_alt),
-                      title: Text('Friend Requests'),
-                      onTap: () {
-                        Navigator.pop(context);
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
+  backgroundColor: Colors.blueAccent,
+  child: Icon(Icons.person_add, color: Colors.white),
+  onPressed: () {
+    showModalBottomSheet(
+      context: context,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: Icon(Icons.search),
+              title: Text('Search Friend'),
+              onTap: () {
+                Navigator.pop(context); // Close the bottom sheet
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const SearchFriendScreen(),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.person_add_alt),
+              title: Text('Friend Requests'),
+              onTap: () {
+                Navigator.pop(context); // Close the bottom sheet
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const FriendRequestScreen(),
+                  ),
+                );
+              },
+            ),
+          ],
         ),
+      ),
+    );
+  },
+),
       ),
     );
   }

@@ -4,6 +4,19 @@ import '/screens/welcome_screen.dart';
 import '/screens/login_screen.dart';
 import '/screens/signup_screen.dart';
 import '/screens/home_screen.dart';
+import '/screens/profile_screen.dart';
+import '/screens/group_screen.dart';
+import '/screens/group_conversation_screen.dart';
+import '/screens/create_group_screen.dart';
+import 'screens/change_password_screen.dart';
+import '/screens/update_password_screen.dart';
+import '/screens/friend_request_screen.dart';
+import '/screens/friend_search_screen.dart';
+import '/screens/status_screen.dart';
+import '/screens/call_screen.dart';
+import '/screens/chat_screen.dart';
+import '/screens/conversation_screen.dart';
+import '/screens/otp_verification_screen.dart';
 
 void main() {
   runApp(ChatApp());
@@ -27,6 +40,29 @@ class ChatApp extends StatelessWidget {
         '/login': (context) => LoginScreen(),
         '/signup': (context) => SignupScreen(),
         '/home': (context) => HomeScreen(),
+        '/profile': (context) => ProfileScreen(),
+        '/group': (context) => GroupScreen(),
+        '/group_conversation': (context) => GroupConversationScreen(
+              groupName: 'Group Name',
+              groupImageUrl: 'https://via.placeholder.com/150',
+              participants: [],
+            ),
+       // '/create_group': (context) => CreateGroupScreen(),
+        '/change_password': (context) => ChangePasswordScreen(),
+        '/update_password': (context) => UpdatePasswordScreen(),
+        '/friend_request': (context) => FriendRequestScreen(),
+       // '/friend_search': (context) => FriendSearchScreen(),
+        '/status': (context) => StatusScreen(),
+        '/call': (context) => CallScreen(
+              callerName: 'Caller Name',
+              callerImageUrl: 'https://via.placeholder.com/150',
+            ),
+        '/chat': (context) => ChatScreen(),
+        '/conversation': (context) => ConversationScreen(
+              name: 'User Name',
+              imageUrl: 'https://via.placeholder.com/150',
+            ),
+        '/otp_verification': (context) => OtpVerificationScreen(),
       },
     );
   }

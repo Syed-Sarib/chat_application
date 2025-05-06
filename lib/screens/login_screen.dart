@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:animate_do/animate_do.dart'; // Add this package for animations
+import 'package:animate_do/animate_do.dart'; 
 import 'otp_verification_screen.dart';
+import 'change_password_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -128,9 +129,14 @@ class _LoginScreenState extends State<LoginScreen> {
                 duration: Duration(milliseconds: 1600),
                 child: TextButton(
                   onPressed: () {
-                    // Handle forgot password
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const ChangePasswordScreen(isForgotPassword: true),
+                      ),
+                    );
                   },
-                  child: Text(
+                  child: const Text(
                     "Forgot Password?",
                     style: TextStyle(color: Color(0xFF3B82F6)),
                   ),

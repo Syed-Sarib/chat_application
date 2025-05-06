@@ -3,25 +3,26 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_sound/flutter_sound.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:chat_application/screens/call_screen.dart';
-import 'package:chat_application/screens/friend_info_screen.dart';
-class ConversationScreen extends StatefulWidget {
-  final String name;
-  final String imageUrl;
 
-  const ConversationScreen({
+class GroupConversationScreen extends StatefulWidget {
+  final String groupName;
+  final String groupImageUrl;
+  final List<Map<String, String>> participants;
+
+  const GroupConversationScreen({
     super.key,
-    required this.name,
-    required this.imageUrl,
+    required this.groupName,
+    required this.groupImageUrl,
+    required this.participants,
   });
 
   @override
-  _ConversationScreenState createState() => _ConversationScreenState();
+  _GroupConversationScreenState createState() => _GroupConversationScreenState();
 }
 
-class _ConversationScreenState extends State<ConversationScreen> {
+class _GroupConversationScreenState extends State<GroupConversationScreen> {
   final TextEditingController _controller = TextEditingController();
-  final List<Map<String, String>> messages = []; // Updated to ensure consistent types
+  final List<Map<String, String>> messages = [];
   bool _isRecording = false;
   bool _isCancelled = false;
   double _dragDistance = 0.0;
@@ -69,19 +70,17 @@ class _ConversationScreenState extends State<ConversationScreen> {
       try {
         await _recorder.startRecorder(toFile: 'voice_note.aac');
 
-        // Start the recording timer
         _recordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
           setState(() {
             _recordingSeconds++;
           });
         });
 
-        // Simulate spectrum animation
         _spectrumTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
           setState(() {
             _spectrumHeights = List.generate(
               10,
-                  (_) => _random.nextDouble() * 30 + 10, // Simulate random decibel levels
+              (_) => _random.nextDouble() * 30 + 10,
             );
           });
         });
@@ -122,13 +121,13 @@ class _ConversationScreenState extends State<ConversationScreen> {
   void _sendVoiceNote() async {
     if (!_isCancelled) {
       try {
-        final path = await _recorder.stopRecorder(); // Ensure this returns a String
+        final path = await _recorder.stopRecorder();
         if (path != null) {
           setState(() {
             messages.add({
               "sender": "Me",
               "type": "voice",
-              "path": path.toString(), // Ensure the path is a string
+              "path": path.toString(),
               "time": "Just Now",
             });
           });
@@ -148,7 +147,6 @@ class _ConversationScreenState extends State<ConversationScreen> {
       _isRecording = false;
     });
 
-    // Stop the timers
     _recordingTimer?.cancel();
     _spectrumTimer?.cancel();
   }
@@ -165,6 +163,54 @@ class _ConversationScreenState extends State<ConversationScreen> {
       });
       _controller.clear();
     }
+  }
+
+  Widget _buildTextMessage(Map<String, String> message, bool isMe) {
+    return Align(
+      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.7),
+        decoration: BoxDecoration(
+          color: isMe ? Colors.blueAccent : Colors.grey[300],
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(15),
+            topRight: const Radius.circular(15),
+            bottomLeft: isMe ? const Radius.circular(15) : Radius.zero,
+            bottomRight: isMe ? Radius.zero : const Radius.circular(15),
+          ),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        margin: const EdgeInsets.symmetric(vertical: 5),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (!isMe)
+              Text(
+                message["sender"] ?? "",
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                  color: Colors.black54,
+                ),
+              ),
+            Text(
+              message["message"] ?? "",
+              style: TextStyle(
+                color: isMe ? Colors.white : Colors.black,
+              ),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              message["time"] ?? "",
+              style: TextStyle(
+                color: isMe ? Colors.white70 : Colors.black54,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildVoiceSpectrum() {
@@ -193,7 +239,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
             child: Row(
               children: List.generate(
                 _spectrumHeights.length,
-                    (index) => AnimatedContainer(
+                (index) => AnimatedContainer(
                   duration: const Duration(milliseconds: 100),
                   width: 5,
                   height: _spectrumHeights[index],
@@ -208,148 +254,6 @@ class _ConversationScreenState extends State<ConversationScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildVoiceMessage(String? path) {
-    if (path == null || path.isEmpty) {
-      return const Text('Invalid voice note');
-    }
-
-    bool isPlaying = false;
-    Timer? spectrumTimer;
-    List<double> spectrumHeights = List.generate(10, (_) => 10.0);
-
-    void _playAudio() async {
-      if (!_player.isOpen()) {
-        await _player.openPlayer();
-      }
-
-      setState(() {
-        isPlaying = true;
-      });
-
-      await _player.startPlayer(
-        fromURI: path,
-        whenFinished: () {
-          setState(() {
-            isPlaying = false;
-          });
-          spectrumTimer?.cancel();
-        },
-      );
-
-      // Start spectrum animation for playback
-      spectrumTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
-        setState(() {
-          spectrumHeights = List.generate(
-            10,
-                (_) => _random.nextDouble() * 30 + 10, // Simulate playback spectrum
-          );
-        });
-      });
-    }
-
-    void _stopAudio() async {
-      await _player.stopPlayer();
-      setState(() {
-        isPlaying = false;
-      });
-      spectrumTimer?.cancel();
-    }
-
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 5),
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.blueAccent.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(15),
-      ),
-      child: Row(
-        children: [
-          IconButton(
-            icon: Icon(
-              isPlaying ? Icons.stop : Icons.play_arrow,
-              color: Colors.blueAccent,
-            ),
-            onPressed: isPlaying ? _stopAudio : _playAudio,
-          ),
-          Expanded(
-            child: Row(
-              children: List.generate(
-                spectrumHeights.length,
-                    (index) => AnimatedContainer(
-                  duration: const Duration(milliseconds: 100),
-                  width: 5,
-                  height: spectrumHeights[index],
-                  margin: const EdgeInsets.symmetric(horizontal: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.blueAccent,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTextMessage(Map<String, String> message, bool isMe) {
-    return Align(
-      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.7),
-        decoration: BoxDecoration(
-          color: isMe ? Colors.blueAccent : Colors.grey[300],
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(15),
-            topRight: const Radius.circular(15),
-            bottomLeft: isMe ? const Radius.circular(15) : Radius.zero,
-            bottomRight: isMe ? Radius.zero : const Radius.circular(15),
-          ),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        margin: const EdgeInsets.symmetric(vertical: 5),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              message["message"] ?? "",
-              style: TextStyle(
-                color: isMe ? Colors.white : Colors.black,
-              ),
-            ),
-            const SizedBox(height: 5),
-            Text(
-              message["time"] ?? "",
-              style: TextStyle(
-                color: isMe ? Colors.white70 : Colors.black54,
-                fontSize: 12,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildOptionButton(IconData icon, String label) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        CircleAvatar(
-          radius: 25,
-          backgroundColor: Colors.blueAccent.withOpacity(0.2),
-          child: Icon(icon, color: Colors.blueAccent),
-        ),
-        const SizedBox(height: 5),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 12, color: Colors.black),
-        ),
-      ],
     );
   }
 
@@ -378,33 +282,21 @@ class _ConversationScreenState extends State<ConversationScreen> {
     );
   }
 
-  void _showRemoveFriendDialog() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text("Remove Friend"),
-          content: const Text("Are you sure you want to remove this friend?"),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context); // Close the dialog
-              },
-              child: const Text("Cancel", style: TextStyle(color: Colors.grey)),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context); // Close the dialog
-                Navigator.pop(context); // Navigate back to the previous screen
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Friend removed successfully!")),
-                );
-              },
-              child: const Text("Remove", style: TextStyle(color: Colors.red)),
-            ),
-          ],
-        );
-      },
+  Widget _buildOptionButton(IconData icon, String label) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        CircleAvatar(
+          radius: 30,
+          backgroundColor: Colors.blueAccent.withOpacity(0.2),
+          child: Icon(icon, color: Colors.blueAccent, size: 30),
+        ),
+        const SizedBox(height: 5),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 12, color: Colors.black),
+        ),
+      ],
     );
   }
 
@@ -414,66 +306,48 @@ class _ConversationScreenState extends State<ConversationScreen> {
       appBar: AppBar(
         backgroundColor: Colors.blueAccent,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white), // White back button
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () {
-            Navigator.pop(context); // Navigate back
+            Navigator.pop(context);
           },
         ),
         title: Row(
           children: [
             CircleAvatar(
-              backgroundImage: NetworkImage(widget.imageUrl),
+              backgroundImage: NetworkImage(widget.groupImageUrl),
               radius: 20,
             ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                widget.name,
+                widget.groupName,
                 style: const TextStyle(color: Colors.white),
               ),
             ),
           ],
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.call, color: Colors.white), // White call button
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => CallScreen(
-                    callerName: widget.name,
-                    callerImageUrl: widget.imageUrl,
-                  ),
-                ),
-              );
-            },
-          ),
           PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert, color: Colors.white), // Three-dots menu
+            icon: const Icon(Icons.more_vert, color: Colors.white),
             onSelected: (value) {
-              if (value == 'info') {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => FriendInfoScreen(
-                      friendName: widget.name,
-                      friendImageUrl: widget.imageUrl,
-                    ),
-                  ),
+              if (value == 'add') {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Add Participant feature coming soon!')),
                 );
-              } else if (value == 'remove') {
-                _showRemoveFriendDialog();
+              } else if (value == 'leave') {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Leave Group feature coming soon!')),
+                );
               }
             },
             itemBuilder: (BuildContext context) => [
               const PopupMenuItem(
-                value: 'info',
-                child: Text('Friend Info'),
+                value: 'add',
+                child: Text('Add Participant'),
               ),
               const PopupMenuItem(
-                value: 'remove',
-                child: Text('Remove Friend'),
+                value: 'leave',
+                child: Text('Leave Group'),
               ),
             ],
           ),
@@ -493,9 +367,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
                   alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 5),
-                    child: message["type"] == "voice"
-                        ? _buildVoiceMessage(message["path"])
-                        : _buildTextMessage(message, isMe),
+                    child: _buildTextMessage(message, isMe),
                   ),
                 );
               },
@@ -510,9 +382,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
                   child: TextFormField(
                     controller: _controller,
                     decoration: InputDecoration(
-                      hintText: _isRecording
-                          ? "Slide left to cancel"
-                          : "Type a message",
+                      hintText: _isRecording ? "Slide left to cancel" : "Type a message",
                       filled: true,
                       fillColor: Colors.grey[200],
                       border: OutlineInputBorder(
@@ -554,17 +424,14 @@ class _ConversationScreenState extends State<ConversationScreen> {
                     ),
                   ),
                 ),
-                // AI Translate Button
                 IconButton(
                   icon: const Icon(Icons.translate, color: Colors.blueAccent),
                   onPressed: () {
-                    // Handle AI Translate functionality
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('AI Translate feature coming soon!')),
                     );
                   },
                 ),
-                // Send Button
                 IconButton(
                   icon: const Icon(Icons.send, color: Colors.blueAccent),
                   onPressed: _sendMessage,
