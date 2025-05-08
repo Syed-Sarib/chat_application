@@ -140,42 +140,57 @@ class _GroupScreenState extends State<GroupScreen> with SingleTickerProviderStat
         backgroundColor: Colors.blueAccent,
         onRefresh: _triggerSearchMode,
         notificationPredicate: (_) => !_isSearchMode,
-        child: ListView.separated(
+        child: ListView.builder(
           controller: _scrollController,
           physics: AlwaysScrollableScrollPhysics(),
           padding: EdgeInsets.symmetric(vertical: 10),
           itemCount: groups.length,
-          separatorBuilder: (_, __) => Divider(indent: 80),
           itemBuilder: (context, index) {
             final group = groups[index];
-            return ListTile(
-              leading: CircleAvatar(
-                radius: 28,
-                backgroundColor: Colors.grey[300],
-                child: Icon(Icons.group, color: Colors.blueAccent, size: 28),
-              ),
-              title: Text(
-                group["name"]!,
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              subtitle: Text(group["message"]!),
-              trailing: Text(
-                group["time"]!,
-                style: TextStyle(color: Colors.grey[600], fontSize: 12),
-              ),
-              onTap: () {
-                // Navigate to the group chat screen when a group is tapped
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => GroupConversationScreen(
-                      groupName: group["name"]!,
-                      groupImageUrl: "https://via.placeholder.com/150", // Placeholder image
-                      participants: group["participants"],
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.grey.withOpacity(0.3),
+                      spreadRadius: 1,
+                      blurRadius: 5,
+                      offset: Offset(0, 3),
                     ),
+                  ],
+                ),
+                child: ListTile(
+                  leading: CircleAvatar(
+                    radius: 28,
+                    backgroundColor: Colors.grey[300],
+                    child: Icon(Icons.group, color: Colors.blueAccent, size: 28),
                   ),
-                );
-              },
+                  title: Text(
+                    group["name"]!,
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  subtitle: Text(group["message"]!),
+                  trailing: Text(
+                    group["time"]!,
+                    style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                  ),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => GroupConversationScreen(
+                          groupName: group["name"]!,
+                          groupImageUrl: "https://via.placeholder.com/150",
+                          participants: group["participants"],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
             );
           },
         ),

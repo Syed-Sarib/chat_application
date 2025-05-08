@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'add_status_screen.dart';
 
 class StatusScreen extends StatelessWidget {
   final List<Map<String, String>> friendStatuses = [
@@ -53,8 +54,15 @@ class StatusScreen extends StatelessWidget {
             ),
             title: Text("My Status", style: TextStyle(fontWeight: FontWeight.bold)),
             subtitle: Text("Tap to add status update"),
-            onTap: () {
-              // Handle adding status
+            onTap: () async {
+              final newStatus = await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => AddStatusScreen()),
+              );
+
+              if (newStatus != null) {
+                print("New Status: $newStatus");
+              }
             },
           ),
 

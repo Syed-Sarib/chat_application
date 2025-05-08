@@ -216,40 +216,56 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
           backgroundColor: Colors.blueAccent,
           onRefresh: _triggerSearchMode,
           notificationPredicate: (_) => !_isSearchMode,
-          child: ListView.separated(
+          child: ListView.builder(
             controller: _scrollController,
             physics: AlwaysScrollableScrollPhysics(),
             padding: EdgeInsets.symmetric(vertical: 10),
             itemCount: chats.length,
-            separatorBuilder: (_, __) => Divider(indent: 80),
             itemBuilder: (context, index) {
               final chat = chats[index];
-              return ListTile(
-                leading: CircleAvatar(
-                  radius: 28,
-                  backgroundColor: Colors.grey, // Default color as placeholder
-                  child: Icon(Icons.person, color: Colors.white), // Default icon
-                ),
-                title: Text(
-                  chat["name"]!,
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                subtitle: Text(chat["message"]!),
-                trailing: Text(
-                  chat["time"]!,
-                  style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                ),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => ConversationScreen(
-                        name: chat["name"]!,
-                        imageUrl: '', // No imageUrl needed here
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), // Add spacing around the box
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white, // Background color of the box
+                    borderRadius: BorderRadius.circular(12), // Rounded corners
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.grey.withOpacity(0.3), // Shadow color
+                        spreadRadius: 1, // Spread radius
+                        blurRadius: 5, // Blur radius
+                        offset: Offset(0, 3), // Shadow position
                       ),
+                    ],
+                  ),
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      radius: 28,
+                      backgroundColor: Colors.grey, // Default color as placeholder
+                      child: Icon(Icons.person, color: Colors.white), // Default icon
                     ),
-                  );
-                },
+                    title: Text(
+                      chat["name"]!,
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: Text(chat["message"]!),
+                    trailing: Text(
+                      chat["time"]!,
+                      style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                    ),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => ConversationScreen(
+                            name: chat["name"]!,
+                            imageUrl: '', // No imageUrl needed here
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
               );
             },
           ),
