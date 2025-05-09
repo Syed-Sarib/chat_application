@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 
 class AddStatusScreen extends StatefulWidget {
   @override
@@ -7,6 +8,8 @@ class AddStatusScreen extends StatefulWidget {
 
 class _AddStatusScreenState extends State<AddStatusScreen> {
   final TextEditingController _statusController = TextEditingController();
+  String? _selectedFilePath; // To store the selected file path
+  String? _fileType; // To store the type of the selected file (image/video)
 
   @override
   void dispose() {
@@ -16,13 +19,33 @@ class _AddStatusScreenState extends State<AddStatusScreen> {
 
   void _submitStatus() {
     final statusText = _statusController.text.trim();
-    if (statusText.isNotEmpty) {
-      
-      Navigator.pop(context, statusText); 
+    if (statusText.isNotEmpty || _selectedFilePath != null) {
+      Navigator.pop(context, {
+        "text": statusText,
+        "filePath": _selectedFilePath,
+        "fileType": _fileType,
+      }); // Return the status text and file to the previous screen
+      _statusController.clear(); // Clear the text field
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Please enter a status before submitting.")),
+        SnackBar(content: Text("Please enter a status or select a file before submitting.")),
       );
+    }
+  }
+
+  Future<void> _pickFile(String type) async {
+    FilePickerResult? result;
+    if (type == "image") {
+      result = await FilePicker.platform.pickFiles(type: FileType.image);
+    } else if (type == "video") {
+      result = await FilePicker.platform.pickFiles(type: FileType.video);
+    }
+
+    if (result?.files.isNotEmpty ?? false) { // Add null check for `result`
+      setState(() {
+        _selectedFilePath = result!.files.single.path; // Use `!` to assert non-null
+        _fileType = type;
+      });
     }
   }
 
@@ -56,11 +79,48 @@ class _AddStatusScreenState extends State<AddStatusScreen> {
               ),
             ),
             SizedBox(height: 16),
+            Row(
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () => _pickFile("image"),
+                  icon: Icon(Icons.image, color: Colors.white),
+                  label: Text("Add Image",style: TextStyle(color: Colors.white),),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blueAccent,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+                SizedBox(width: 16),
+                ElevatedButton.icon(
+                  onPressed: () => _pickFile("video"),
+                  icon: Icon(Icons.videocam, color: Colors.white),
+                  label: Text("Add Video",style: TextStyle(color: Colors.white),),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blueAccent,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (_selectedFilePath != null) ...[
+              SizedBox(height: 16),
+              Text(
+                "Selected file: ${_selectedFilePath!.split('/').last}",
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ],
+            SizedBox(height: 16),
             ElevatedButton.icon(
               onPressed: _submitStatus,
-              icon: Icon(Icons.send),
-              label: Text("Post Status",
-                  style: TextStyle(color: Colors.white)),
+              icon: Icon(Icons.send, color: Colors.white), // Set icon color to white
+              label: Text(
+                "Post Status",
+                style: TextStyle(color: Colors.white),
+              ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.blueAccent,
                 textStyle: TextStyle(color: Colors.white),

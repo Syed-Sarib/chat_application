@@ -23,6 +23,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _profileName = "Sarib";
   String _profileDescription = "Frontend Developer";
   File? _profileAvatar;
+  int _selectedIndex = 0;
 
   @override
   void initState() {
@@ -287,6 +288,124 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 const SizedBox(height: 40),
               ],
             ),
+          ),
+        ],
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _selectedIndex,
+        onTap: (index) {
+          setState(() {
+            _selectedIndex = index;
+          });
+        },
+        items: [
+          BottomNavigationBarItem(
+            icon: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12), // Rounded square shape
+                    color: _selectedIndex == 0 ? Colors.blueAccent : Colors.transparent, // Highlight selected
+                  ),
+                  padding: EdgeInsets.all(8),
+                  child: Icon(
+                    Icons.chat,
+                    size: 30,
+                    color: _selectedIndex == 0 ? Colors.white : Colors.white,
+                  ),
+                ),
+                if (_selectedIndex != 0) ...[
+                  const SizedBox(height: 1), // Reduced spacing between icon and text
+                  const Text(
+                    "Chat",
+                    style: TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+                ],
+              ],
+            ),
+            label: '',
+          ),
+          BottomNavigationBarItem(
+            icon: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12), // Rounded square shape
+                    color: _selectedIndex == 1 ? Colors.blueAccent : Colors.transparent, // Highlight selected
+                  ),
+                  padding: EdgeInsets.all(8),
+                  child: Icon(
+                    Icons.group,
+                    size: 30,
+                    color: _selectedIndex == 1 ? Colors.white : Colors.white,
+                  ),
+                ),
+                if (_selectedIndex != 1) ...[
+                  const SizedBox(height: 2), // Reduced spacing between icon and text
+                  const Text(
+                    "Group",
+                    style: TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+                ],
+              ],
+            ),
+            label: '',
+          ),
+          BottomNavigationBarItem(
+            icon: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12), // Rounded square shape
+                    color: _selectedIndex == 2 ? Colors.blueAccent : Colors.transparent, // Highlight selected
+                  ),
+                  padding: EdgeInsets.all(8),
+                  child: Icon(
+                    Icons.circle,
+                    size: 30,
+                    color: _selectedIndex == 2 ? Colors.white : Colors.white,
+                  ),
+                ),
+                if (_selectedIndex != 2) ...[
+                  const SizedBox(height: 2), // Reduced spacing between icon and text
+                  const Text(
+                    "Status",
+                    style: TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+                ],
+              ],
+            ),
+            label: '',
+          ),
+          BottomNavigationBarItem(
+            icon: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12), // Rounded square shape
+                    color: _selectedIndex == 3 ? Colors.blueAccent : Colors.transparent, // Highlight selected
+                  ),
+                  padding: EdgeInsets.all(8),
+                  child: Icon(
+                    Icons.person,
+                    size: 30,
+                    color: _selectedIndex == 3 ? Colors.white : Colors.white,
+                  ),
+                ),
+                if (_selectedIndex != 3) ...[
+                  const SizedBox(height: 2), // Reduced spacing between icon and text
+                  const Text(
+                    "Profile",
+                    style: TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+                ],
+              ],
+            ),
+            label: '',
           ),
         ],
       ),

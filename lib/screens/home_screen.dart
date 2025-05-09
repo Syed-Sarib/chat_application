@@ -1,8 +1,9 @@
-import 'package:chat_application/screens/status_screen.dart';
+import 'package:curved_navigation_bar/curved_navigation_bar.dart';
 import 'package:flutter/material.dart';
 import 'chat_screen.dart';
 import 'profile_screen.dart';
 import 'group_screen.dart';
+import 'status_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -26,8 +27,8 @@ class _HomeScreenState extends State<HomeScreen> {
   void _onItemTapped(int index) {
     _pageController.animateToPage(
       index,
-      duration: Duration(milliseconds: 300), // Smooth animation duration
-      curve: Curves.easeInOut, // Smooth animation curve
+      duration: Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
     );
   }
 
@@ -42,36 +43,112 @@ class _HomeScreenState extends State<HomeScreen> {
           });
         },
         children: _screens,
-        physics: PageScrollPhysics(), // Ensures smooth swiping without stopping midway
+        physics:BouncingScrollPhysics(), // Disable swipe to switch pages
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
-        selectedItemColor: Colors.blueAccent,
-        unselectedItemColor: Colors.grey,
-        selectedFontSize: 14,
-        unselectedFontSize: 0, // Hide the text of unselected tabs
-        showSelectedLabels: true,
-        showUnselectedLabels: false, // Hide the text of unselected tabs
-        type: BottomNavigationBarType.fixed, // Ensures smooth transitions
+      bottomNavigationBar: CurvedNavigationBar(
+        index: _selectedIndex,
+        height: 60,
+        backgroundColor: Colors.transparent, // Background color behind the navbar
+        color: Colors.blueAccent, // Navbar color
+        buttonBackgroundColor: Colors.transparent, // Floating button color
+        animationDuration: Duration(milliseconds: 500),
+        animationCurve: Curves.easeInOutCubicEmphasized,
         items: [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.chat),
-            label: 'Chats',
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12), // Rounded square shape
+                  color: _selectedIndex == 0 ? Colors.blueAccent : Colors.transparent, // Highlight selected
+                ),
+                padding: EdgeInsets.all(8),
+                child: Icon(
+                  Icons.chat,
+                  size: 30,
+                  color: _selectedIndex == 0 ? Colors.white : Colors.white,
+                ),
+              ),
+              if (_selectedIndex != 0) // Show name only if not selected
+                const Text(
+                  "Chat",
+                  style: TextStyle(color: Colors.white, fontSize: 12),
+                ),
+            ],
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.group),
-            label: 'Groups',
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12), // Rounded square shape
+                  color: _selectedIndex == 1 ? Colors.blueAccent : Colors.transparent, // Highlight selected
+                ),
+                padding: EdgeInsets.all(8),
+                child: Icon(
+                  Icons.group,
+                  size: 30,
+                  color: _selectedIndex == 1 ? Colors.white : Colors.white,
+                ),
+              ),
+              if (_selectedIndex != 1) // Show name only if not selected
+                const Text(
+                  "Group",
+                  style: TextStyle(color: Colors.white, fontSize: 12),
+                ),
+            ],
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.circle),
-            label: 'Status',
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12), // Rounded square shape
+                  color: _selectedIndex == 2 ? Colors.blueAccent : Colors.transparent, // Highlight selected
+                ),
+                padding: EdgeInsets.all(8),
+                child: Icon(
+                  Icons.circle,
+                  size: 30,
+                  color: _selectedIndex == 2 ? Colors.white : Colors.white,
+                ),
+              ),
+              if (_selectedIndex != 2) // Show name only if not selected
+                const Text(
+                  "Status",
+                  style: TextStyle(color: Colors.white, fontSize: 12),
+                ),
+            ],
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: 'Profile',
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12), // Rounded square shape
+                  color: _selectedIndex == 3 ? Colors.blueAccent : Colors.transparent, // Highlight selected
+                ),
+                padding: EdgeInsets.all(8),
+                child: Icon(
+                  Icons.person,
+                  size: 30,
+                  color: _selectedIndex == 3 ? Colors.white : Colors.white,
+                ),
+              ),
+              if (_selectedIndex != 3) // Show name only if not selected
+                const Text(
+                  "Profile",
+                  style: TextStyle(color: Colors.white, fontSize: 12),
+                ),
+            ],
           ),
         ],
+        onTap: (index) {
+          setState(() {
+            _selectedIndex = index;
+          });
+          _onItemTapped(index);
+        },
       ),
     );
   }
