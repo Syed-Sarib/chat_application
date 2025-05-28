@@ -1,13 +1,19 @@
+import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'change_password_screen.dart';
 import 'login_screen.dart';
-import 'chat_backup_screen.dart';
 import 'edit_profile_screen.dart';
-import 'dart:io';
+import 'chat_backup_screen.dart';
 import 'get_premium_screen.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+import 'package:provider/provider.dart';
+import '../provider/theme_provider.dart';
 
-enum AppTheme { deviceDefault, light, dark, custom }
+enum AppTheme { deviceDefault, light, dark }
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -19,11 +25,13 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   final ScrollController _scrollController = ScrollController();
   double _scrollOffset = 0.0;
-  AppTheme _selectedTheme = AppTheme.deviceDefault;
-  String _profileName = "Sarib";
-  String _profileDescription = "Frontend Developer";
+  String _profileName = "Loading...";
+  String _profileDescription = "Loading...";
+  String _profileEmail = "Loading...";
   File? _profileAvatar;
-  int _selectedIndex = 0;
+  String _profileAvatarUrl = "";
+  String _profileJoinDate = "Loading...";
+  String _profileUserTier = "Loading...";
 
   @override
   void initState() {
@@ -33,11 +41,55 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _scrollOffset = _scrollController.offset;
       });
     });
+    _loadUserProfile();
   }
 
-  double get _headerAnimationProgress {
-    return (_scrollOffset / 150).clamp(0.0, 1.0); // Adjust this for scroll effect
+  Future<void> _loadUserProfile() async {
+    User? user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      try {
+        DocumentSnapshot userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+        if (userDoc.exists) {
+          setState(() {
+            _profileName = userDoc['name'] ?? "Unknown";
+            _profileDescription = userDoc['about'] ?? "No description available";
+            _profileEmail = userDoc['email'] ?? "No email available";
+            _profileAvatarUrl = userDoc['image'] ?? "";
+            Timestamp createdAt = userDoc['created_at'] ?? Timestamp.now();
+            _profileJoinDate = createdAt.toDate().toString().substring(0, 10);
+            _profileUserTier = userDoc['permission'] ?? "Standard";
+          });
+
+          if (_profileAvatarUrl.isNotEmpty) {
+            await _downloadProfileImage(_profileAvatarUrl);
+          }
+        }
+      } catch (e) {
+        print('Error loading user profile: $e');
+      }
+    }
   }
+
+  Future<void> _downloadProfileImage(String imageUrl) async {
+    try {
+      final response = await http.get(Uri.parse(imageUrl));
+      if (response.statusCode == 200) {
+        final directory = await getApplicationDocumentsDirectory();
+        final filePath = '${directory.path}/profile_image.jpg';
+        final file = File(filePath);
+        await file.writeAsBytes(response.bodyBytes);
+        setState(() {
+          _profileAvatar = file;
+        });
+      } else {
+        print('Image not found or invalid URL');
+      }
+    } catch (e) {
+      print('Failed to download image: $e');
+    }
+  }
+
+  double get _headerAnimationProgress => (_scrollOffset / 150).clamp(0.0, 1.0);
 
   @override
   Widget build(BuildContext context) {
@@ -70,7 +122,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             radius: imageSize / 2 - 4,
                             backgroundImage: _profileAvatar != null
                                 ? FileImage(_profileAvatar!)
-                                : const AssetImage("assets/images/default_avatar.png") as ImageProvider,
+                                : _profileAvatarUrl.isNotEmpty
+                                    ? NetworkImage(_profileAvatarUrl)
+                                    : _getDefaultAvatar(),
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -86,20 +140,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
               },
             ),
           ),
-
           SliverToBoxAdapter(
             child: Column(
               children: [
                 Stack(
                   children: [
-                    // Blue background at top
-                    Container(
-                      height: 200,
-                      width: double.infinity,
-                      color: Colors.blue,
-                    ),
-
-                    // White card below avatar
+                    Container(height: 200, width: double.infinity, color: Colors.blue),
                     Container(
                       padding: const EdgeInsets.only(top: 120),
                       alignment: Alignment.topCenter,
@@ -123,9 +169,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   ],
                                 ),
                               ),
-                              infoRow("Email", "233505@students.au.edu.pk"),
-                              infoRow("Join Date", "2025-01-01"),
-                              infoRow("User Tier", "Premium"),
+                              infoRow("Email", _profileEmail),
+                              infoRow("Join Date", _profileJoinDate),
+                              infoRow("User Tier", _profileUserTier),
                               const SizedBox(height: 20),
                               ElevatedButton.icon(
                                 onPressed: () async {
@@ -133,15 +179,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     context,
                                     MaterialPageRoute(
                                       builder: (context) => EditProfileScreen(
-                                        currentName: _profileName, // Pass the current name
-                                        currentDescription: _profileDescription, // Pass the current description
+                                        currentName: _profileName,
+                                        currentDescription: _profileDescription,
                                       ),
                                     ),
                                   );
 
                                   if (result != null && result is Map<String, dynamic>) {
                                     setState(() {
-                                      // Update the profile information
                                       _profileName = result['name'];
                                       _profileDescription = result['description'];
                                       _profileAvatar = result['avatar'];
@@ -150,6 +195,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(content: Text("Profile updated successfully!")),
                                     );
+
+                                    User? user = FirebaseAuth.instance.currentUser;
+                                    if (user != null) {
+                                      await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+                                        'name': _profileName,
+                                        'about': _profileDescription,
+                                      });
+                                    }
                                   }
                                 },
                                 icon: const Icon(Icons.edit),
@@ -160,8 +213,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                       ),
                     ),
-
-                    // Avatar positioned on blue background
                     Positioned(
                       top: topPadding,
                       left: leftPadding,
@@ -175,25 +226,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             radius: imageSize / 2 - 4,
                             backgroundImage: _profileAvatar != null
                                 ? FileImage(_profileAvatar!)
-                                : const AssetImage("assets/images/default_avatar.png") as ImageProvider,
+                                : _profileAvatarUrl.isNotEmpty
+                                    ? NetworkImage(_profileAvatarUrl)
+                                    : _getDefaultAvatar(),
                           ),
                         ),
                       ),
                     ),
                   ],
                 ),
-
                 const SizedBox(height: 20),
-
-                // Logout Button
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: () {
-                        _showLogoutConfirmationDialog();
-                      },
+                      onPressed: _showLogoutConfirmationDialog,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.red,
                         padding: const EdgeInsets.symmetric(vertical: 16),
@@ -206,10 +254,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 24),
-
-                // Settings Section
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: const Align(
@@ -217,10 +262,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     child: Text("Settings", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   ),
                 ),
-
                 const SizedBox(height: 8),
-
-                // Settings Card
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: Card(
@@ -232,195 +274,51 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           leading: const Icon(Icons.lock, color: Colors.blue),
                           title: const Text("Change Password"),
                           onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const ChangePasswordScreen(isForgotPassword: false),
-                              ),
-                            );
+                            Navigator.push(context, MaterialPageRoute(builder: (context) => const ChangePasswordScreen()));
                           },
                         ),
                         const Divider(),
                         ListTile(
                           leading: const Icon(Icons.color_lens, color: Colors.blue),
                           title: const Text("Change Theme"),
-                          onTap: () {
-                            _showThemeSelectionDialog();
-                          },
+                          onTap: _showThemeSelectionDialog,
                         ),
                         const Divider(),
                         ListTile(
                           leading: const Icon(Icons.backup, color: Colors.blue),
                           title: const Text("Chat Backup"),
                           onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const ChatBackupScreen(),
-                              ),
-                            );
+                            Navigator.push(context, MaterialPageRoute(builder: (context) => const ChatBackupScreen()));
                           },
                         ),
                         const Divider(),
                         ListTile(
-                          leading: const Icon(Icons.attach_money, color: Colors.blue),
+                          leading: const Icon(Icons.star, color: Colors.blue),
                           title: const Text("Get Premium"),
                           onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const GetPremiumScreen(),
-                              ),
-                            );
+                            Navigator.push(context, MaterialPageRoute(builder: (context) => const GetPremiumScreen()));
                           },
-                        ),
-                        const Divider(),
-                        ListTile(
-                          leading: const Icon(Icons.delete_forever, color: Colors.red),
-                          title: const Text("Delete Account"),
-                          onTap: () {},
                         ),
                       ],
                     ),
                   ),
                 ),
-
-                const SizedBox(height: 40),
               ],
             ),
-          ),
-        ],
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: (index) {
-          setState(() {
-            _selectedIndex = index;
-          });
-        },
-        items: [
-          BottomNavigationBarItem(
-            icon: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12), // Rounded square shape
-                    color: _selectedIndex == 0 ? Colors.blueAccent : Colors.transparent, // Highlight selected
-                  ),
-                  padding: EdgeInsets.all(8),
-                  child: Icon(
-                    Icons.chat,
-                    size: 30,
-                    color: _selectedIndex == 0 ? Colors.white : Colors.white,
-                  ),
-                ),
-                if (_selectedIndex != 0) ...[
-                  const SizedBox(height: 1), // Reduced spacing between icon and text
-                  const Text(
-                    "Chat",
-                    style: TextStyle(color: Colors.white, fontSize: 12),
-                  ),
-                ],
-              ],
-            ),
-            label: '',
-          ),
-          BottomNavigationBarItem(
-            icon: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12), // Rounded square shape
-                    color: _selectedIndex == 1 ? Colors.blueAccent : Colors.transparent, // Highlight selected
-                  ),
-                  padding: EdgeInsets.all(8),
-                  child: Icon(
-                    Icons.group,
-                    size: 30,
-                    color: _selectedIndex == 1 ? Colors.white : Colors.white,
-                  ),
-                ),
-                if (_selectedIndex != 1) ...[
-                  const SizedBox(height: 2), // Reduced spacing between icon and text
-                  const Text(
-                    "Group",
-                    style: TextStyle(color: Colors.white, fontSize: 12),
-                  ),
-                ],
-              ],
-            ),
-            label: '',
-          ),
-          BottomNavigationBarItem(
-            icon: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12), // Rounded square shape
-                    color: _selectedIndex == 2 ? Colors.blueAccent : Colors.transparent, // Highlight selected
-                  ),
-                  padding: EdgeInsets.all(8),
-                  child: Icon(
-                    Icons.circle,
-                    size: 30,
-                    color: _selectedIndex == 2 ? Colors.white : Colors.white,
-                  ),
-                ),
-                if (_selectedIndex != 2) ...[
-                  const SizedBox(height: 2), // Reduced spacing between icon and text
-                  const Text(
-                    "Status",
-                    style: TextStyle(color: Colors.white, fontSize: 12),
-                  ),
-                ],
-              ],
-            ),
-            label: '',
-          ),
-          BottomNavigationBarItem(
-            icon: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12), // Rounded square shape
-                    color: _selectedIndex == 3 ? Colors.blueAccent : Colors.transparent, // Highlight selected
-                  ),
-                  padding: EdgeInsets.all(8),
-                  child: Icon(
-                    Icons.person,
-                    size: 30,
-                    color: _selectedIndex == 3 ? Colors.white : Colors.white,
-                  ),
-                ),
-                if (_selectedIndex != 3) ...[
-                  const SizedBox(height: 2), // Reduced spacing between icon and text
-                  const Text(
-                    "Profile",
-                    style: TextStyle(color: Colors.white, fontSize: 12),
-                  ),
-                ],
-              ],
-            ),
-            label: '',
           ),
         ],
       ),
     );
   }
 
-  Widget infoRow(String label, String value) {
+  Widget infoRow(String title, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const Icon(Icons.info_outline, size: 18, color: Colors.blue),
-          const SizedBox(width: 8),
-          Text("$label: ", style: const TextStyle(fontWeight: FontWeight.w600)),
-          Expanded(child: Text(value, overflow: TextOverflow.ellipsis)),
+          Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text(value, style: TextStyle(color: Colors.grey[700])),
         ],
       ),
     );
@@ -429,123 +327,54 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void _showLogoutConfirmationDialog() {
     showDialog(
       context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text(
-            "Logout",
-            style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold),
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm Logout'),
+        content: const Text('Are you sure you want to log out?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () async {
+              await FirebaseAuth.instance.signOut();
+              Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const LoginScreen()));
+            },
+            child: const Text('Logout'),
           ),
-          content: const Text("Do you really want to logout?"),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-              },
-              child: const Text(
-                "Cancel",
-                style: TextStyle(color: Colors.grey),
-              ),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context); 
-                Navigator.pushAndRemoveUntil(
-                  context,
-                  MaterialPageRoute(builder: (context) => const LoginScreen()),
-                  (route) => false,
-                );
-              },
-              child: const Text(
-                "Logout",
-                style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
-        );
-      },
+        ],
+      ),
     );
   }
 
   void _showThemeSelectionDialog() {
     showDialog(
       context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text(
-            "Select Theme",
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.phone_android, color: Colors.blue),
-                title: const Text("Device Default"),
-                trailing: _selectedTheme == AppTheme.deviceDefault
-                    ? const Icon(Icons.check, color: Colors.green)
-                    : null,
-                onTap: () {
-                  setState(() {
-                    _selectedTheme = AppTheme.deviceDefault;
-                  });
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Theme set to Device Default")),
-                  );
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.light_mode, color: Colors.blue),
-                title: const Text("Light"),
-                trailing: _selectedTheme == AppTheme.light
-                    ? const Icon(Icons.check, color: Colors.green)
-                    : null,
-                onTap: () {
-                  setState(() {
-                    _selectedTheme = AppTheme.light;
-                  });
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Theme set to Light")),
-                  );
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.dark_mode, color: Colors.blue),
-                title: const Text("Dark"),
-                trailing: _selectedTheme == AppTheme.dark
-                    ? const Icon(Icons.check, color: Colors.green)
-                    : null,
-                onTap: () {
-                  setState(() {
-                    _selectedTheme = AppTheme.dark;
-                  });
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Theme set to Dark")),
-                  );
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.color_lens, color: Colors.blue),
-                title: const Text("Custom"),
-                trailing: _selectedTheme == AppTheme.custom
-                    ? const Icon(Icons.check, color: Colors.green)
-                    : null,
-                onTap: () {
-                  setState(() {
-                    _selectedTheme = AppTheme.custom;
-                  });
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Theme set to Custom")),
-                  );
-                },
-              ),
-            ],
-          ),
-        );
-      },
+      builder: (context) => AlertDialog(
+        title: const Text("Select Theme"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: AppTheme.values.map((theme) {
+            return ListTile(
+              title: Text(theme.name),
+              onTap: () {
+                // Update the theme using ThemeProvider
+                final themeProvider = Provider.of<ThemeProvider>(context, listen: false);
+                if (theme == AppTheme.light) {
+                  themeProvider.setLightTheme();
+                } else if (theme == AppTheme.dark) {
+                  themeProvider.setDarkTheme();
+                } else if (theme == AppTheme.deviceDefault) {
+                  themeProvider.setSystemTheme();
+                }
+
+                Navigator.pop(context); // Close the dialog
+              },
+            );
+          }).toList(),
+        ),
+      ),
     );
+  }
+
+  ImageProvider _getDefaultAvatar() {
+    return const AssetImage('assets/images/default_avatar.jpeg');
   }
 }

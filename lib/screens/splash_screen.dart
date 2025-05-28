@@ -1,87 +1,107 @@
-import 'package:flutter/material.dart';
 import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+import 'home_screen.dart';
 import 'welcome_screen.dart';
+import '../api/apis.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
   @override
-  _SplashScreenState createState() => _SplashScreenState();
+  State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _scaleAnimation;
+class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMixin {
+  late AnimationController _fadeController;
+  late Animation<double> _fadeAnimation;
 
   @override
   void initState() {
     super.initState();
 
-    // Initialize the AnimationController and Animation
-    _controller = AnimationController(
-      duration: const Duration(seconds: 1),  // Time for one complete animation cycle
+    // Initialize the animation controller for the fade animation
+    _fadeController = AnimationController(
       vsync: this,
+      duration: const Duration(milliseconds: 1000),
     );
 
-    _scaleAnimation = Tween<double>(begin: 0.8, end: 1.2).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: Curves.easeInOut,
+    _fadeAnimation = CurvedAnimation(
+      parent: _fadeController,
+      curve: Curves.easeIn,
+    );
+
+    _startSplashSequence();
+  }
+
+  Future<void> _startSplashSequence() async {
+    try {
+      await APIs.init();
+      _fadeController.forward(); // Start the fade animation
+      await Future.delayed(const Duration(seconds: 2));
+      _navigateToNext();
+    } catch (e) {
+      print("Splash initialization error: $e");
+      _navigateToNext();
+    }
+  }
+
+  void _navigateToNext() {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (!mounted) return;
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => user != null ? const HomeScreen() : const WelcomeScreen(),
       ),
     );
-
-    // Start the animation immediately
-    _controller.repeat(reverse: true);
-
-    // Navigate to the WelcomeScreen after 3 seconds
-    Timer(Duration(seconds: 3), () {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => WelcomeScreen()),
-      );
-    });
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _fadeController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.blueAccent,
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+      backgroundColor: Color(0xFFEBEBEB), // Set background to #EBEBEB
+      body: SafeArea(
+        child: Stack(
           children: [
-            // Animated Icon with scaling effect
-            AnimatedBuilder(
-              animation: _controller,
-              builder: (context, child) {
-                return Transform.scale(
-                  scale: _scaleAnimation.value,
-                  child: Icon(
-                    Icons.chat,
-                    size: 100,  // Icon size
-                    color: Colors.white,  // Icon color
+            Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Add the animated logo image here with fade animation
+                  FadeTransition(
+                    opacity: _fadeAnimation,
+                    child: Image.asset(
+                      'assets/images/default_avatar.jpeg', // Replace with your logo's path
+                      width: 200, // Adjust the width as needed
+                      height: 200, // Adjust the height as needed
+                    ),
                   ),
-                );
-              },
+                ],
+              ),
             ),
-            SizedBox(height: 20),
-            // Loading Indicator
-            CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-            ),
-            SizedBox(height: 20),
-            // App Title
-            Text(
-              "Chat App",
-              style: TextStyle(
-                fontSize: 32,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
+            Positioned(
+              bottom: 30,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Text(
+                  "Powered By MS",
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.black.withOpacity(0.6), // Light gray color
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ),
             ),
           ],

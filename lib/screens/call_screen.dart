@@ -22,8 +22,6 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   late AnimationController _dragController;
   late Animation<double> _dragAnimation;
   Timer? _idleTimer;
-  double _idleOffset = 10.0;
-  bool _isAnimating = false;
 
   @override
   void initState() {
@@ -58,8 +56,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
 
       if (mounted) {
         setState(() {
-          _isAnimating = true;
-          _idleOffset = 180; // move to the end of the capsule
+// move to the end of the capsule
         });
 
         await Future.delayed(const Duration(milliseconds: 500));
@@ -67,13 +64,12 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
         if (!mounted || _callAccepted) return;
 
         setState(() {
-          _idleOffset = 10; // return to start
+// return to start
         });
 
         await Future.delayed(const Duration(milliseconds: 500));
 
         if (mounted) {
-          setState(() => _isAnimating = false);
         }
       }
     });

@@ -1,163 +1,187 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:animate_do/animate_do.dart';
-import 'update_password_screen.dart';
 
 class ChangePasswordScreen extends StatefulWidget {
-  final bool isForgotPassword; 
-  const ChangePasswordScreen({super.key, this.isForgotPassword = true});
+  const ChangePasswordScreen({super.key});
 
   @override
   State<ChangePasswordScreen> createState() => _ChangePasswordScreenState();
 }
 
 class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
-  final emailController = TextEditingController();
-  final otpController = TextEditingController();
-  bool isOtpSent = false;
+  final TextEditingController _currentPasswordController = TextEditingController();
+  final TextEditingController _newPasswordController = TextEditingController();
+  final TextEditingController _confirmPasswordController = TextEditingController();
 
-  void _sendOtp() {
-    if (emailController.text.isNotEmpty) {
+  bool _isLoading = false;
+  String _errorMessage = '';
+  bool _obscureCurrentPassword = true;
+  bool _obscureNewPassword = true;
+  bool _obscureConfirmPassword = true;
+
+  Future<void> _changePassword() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = '';
+    });
+
+    final currentPassword = _currentPasswordController.text.trim();
+    final newPassword = _newPasswordController.text.trim();
+    final confirmPassword = _confirmPasswordController.text.trim();
+
+    if (newPassword != confirmPassword) {
       setState(() {
-        isOtpSent = true;
+        _errorMessage = 'New passwords do not match';
+        _isLoading = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("OTP sent to your email!")),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please enter your email!")),
-      );
+      return;
+    }
+
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null && user.email != null) {
+        // Re-authenticate
+        final credential = EmailAuthProvider.credential(
+          email: user.email!,
+          password: currentPassword,
+        );
+        await user.reauthenticateWithCredential(credential);
+
+        // Update password
+        await user.updatePassword(newPassword);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Password changed successfully')),
+          );
+          Navigator.pop(context);
+        }
+      }
+    } on FirebaseAuthException catch (e) {
+      setState(() {
+        _errorMessage = e.message ?? 'An error occurred';
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'An unexpected error occurred';
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
-  void _verifyOtp() {
-    if (otpController.text.isNotEmpty) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const UpdatePasswordScreen()),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please enter the OTP!")),
-      );
-    }
+  Widget _buildTextField({
+    required String label,
+    required TextEditingController controller,
+    required bool obscureText,
+    required Function() toggleVisibility,
+    required IconData suffixIcon,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: TextField(
+        controller: controller,
+        obscureText: obscureText,
+        decoration: InputDecoration(
+          labelText: label,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          suffixIcon: IconButton(
+            icon: Icon(suffixIcon, color: Colors.blueAccent),
+            onPressed: toggleVisibility,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCustomButton(String text, VoidCallback onPressed) {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton(
+        onPressed: _isLoading ? null : onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.blueAccent, // Change to your app's main color
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+        child: _isLoading
+            ? const CircularProgressIndicator(color: Colors.white)
+            : Text(
+                text,
+                style: const TextStyle(fontSize: 16, color: Colors.white),
+              ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF9FAFB),
       appBar: AppBar(
-        title: Text(
-          widget.isForgotPassword ? "Forgot Password" : "Change Password",
-          style: const TextStyle(color: Colors.white),
-        ),
-        backgroundColor: const Color(0xFF3B82F6),
-        elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
+        title: const Text('Change Password'),
+        centerTitle: true,
       ),
       body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              BounceInDown(
-                duration: const Duration(milliseconds: 1200),
-                child: const Icon(
-                  Icons.lock_reset,
-                  size: 100,
-                  color: Color(0xFF3B82F6),
-                ),
-              ),
-              const SizedBox(height: 20),
-              FadeIn(
-                duration: const Duration(milliseconds: 1500),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            _buildTextField(
+              label: 'Current Password',
+              controller: _currentPasswordController,
+              obscureText: _obscureCurrentPassword,
+              toggleVisibility: () {
+                setState(() {
+                  _obscureCurrentPassword = !_obscureCurrentPassword;
+                });
+              },
+              suffixIcon: _obscureCurrentPassword
+                  ? Icons.visibility_off
+                  : Icons.visibility,
+            ),
+            _buildTextField(
+              label: 'New Password',
+              controller: _newPasswordController,
+              obscureText: _obscureNewPassword,
+              toggleVisibility: () {
+                setState(() {
+                  _obscureNewPassword = !_obscureNewPassword;
+                });
+              },
+              suffixIcon: _obscureNewPassword
+                  ? Icons.visibility_off
+                  : Icons.visibility,
+            ),
+            _buildTextField(
+              label: 'Confirm New Password',
+              controller: _confirmPasswordController,
+              obscureText: _obscureConfirmPassword,
+              toggleVisibility: () {
+                setState(() {
+                  _obscureConfirmPassword = !_obscureConfirmPassword;
+                });
+              },
+              suffixIcon: _obscureConfirmPassword
+                  ? Icons.visibility_off
+                  : Icons.visibility,
+            ),
+            if (_errorMessage.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
                 child: Text(
-                  widget.isForgotPassword ? "Forgot Password?" : "Change Password",
-                  style: const TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF111827),
-                  ),
-                  textAlign: TextAlign.center,
+                  _errorMessage,
+                  style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w500),
                 ),
               ),
-              const SizedBox(height: 10),
-              FadeIn(
-                duration: const Duration(milliseconds: 1800),
-                child: Text(
-                  widget.isForgotPassword
-                      ? "Enter your email address to receive an OTP."
-                      : "Enter your email address to change your password.",
-                  style: const TextStyle(
-                    fontSize: 16,
-                    color: Color(0xFF6B7280),
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-              const SizedBox(height: 40),
-              SlideInUp(
-                duration: const Duration(milliseconds: 1000),
-                child: TextFormField(
-                  controller: emailController,
-                  decoration: InputDecoration(
-                    labelText: 'Email',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    prefixIcon: const Icon(Icons.email_outlined, color: Color(0xFF3B82F6)),
-                  ),
-                ),
-              ),
-              if (isOtpSent) ...[
-                const SizedBox(height: 20),
-                SlideInUp(
-                  duration: const Duration(milliseconds: 1000),
-                  child: TextFormField(
-                    controller: otpController,
-                    decoration: InputDecoration(
-                      labelText: 'Enter OTP',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      prefixIcon: const Icon(Icons.lock_outline, color: Color(0xFF3B82F6)),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextButton(
-                  onPressed: _sendOtp,
-                  child: const Text(
-                    "Resend OTP",
-                    style: TextStyle(color: Color(0xFF3B82F6)),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 24),
-              SlideInUp(
-                duration: const Duration(milliseconds: 1200),
-                child: ElevatedButton(
-                  onPressed: isOtpSent ? _verifyOtp : _sendOtp,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF3B82F6),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    minimumSize: const Size(double.infinity, 48),
-                  ),
-                  child: Text(
-                    isOtpSent ? "Verify OTP" : "Send OTP",
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ),
-            ],
-          ),
+            const SizedBox(height: 24),
+            _buildCustomButton('Update Password', _changePassword),
+          ],
         ),
       ),
     );

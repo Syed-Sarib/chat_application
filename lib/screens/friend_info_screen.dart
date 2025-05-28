@@ -1,115 +1,202 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-class FriendInfoScreen extends StatelessWidget {
+class FriendInfoScreen extends StatefulWidget {
+  final String friendId;
   final String friendName;
   final String friendImageUrl;
 
   const FriendInfoScreen({
     super.key,
+    required this.friendId,
     required this.friendName,
     required this.friendImageUrl,
   });
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("Friend Info"),
-        backgroundColor: Colors.blueAccent,
-        iconTheme: const IconThemeData(color: Colors.white),
-        titleTextStyle: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-      ),
-      body: Stack(
-        children: [
-          // Blue background
-          Container(
-            height: 200,
-            width: double.infinity,
-            color: Colors.blueAccent,
-          ),
+  State<FriendInfoScreen> createState() => _FriendInfoScreenState();
+}
 
-          // Card and avatar
-          Column(
-            children: [
-              const SizedBox(height: 90), 
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Card(
-                  elevation: 4,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 50), // Space for the avatar inside the card
-                        Center(
-                          child: Text(
-                            "@$friendName",
-                            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        const Center(
-                          child: Text(
-                            "Friend's Profile Information",
-                            style: TextStyle(color: Colors.grey),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        _infoRow("Email", "friend@example.com"),
-                        _infoRow("Join Date", "2025-01-01"),
-                        _infoRow("Status", "Active"),
-                        const SizedBox(height: 20),
-                        Center(
-                          child: ElevatedButton(
-                            onPressed: () {
-                              Navigator.pop(context); // Navigate back to the previous screen
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.blueAccent,
-                              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 32),
-                            ),
-                            child: const Text(
-                              "Back",
-                              style: TextStyle(color: Colors.white),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
+class _FriendInfoScreenState extends State<FriendInfoScreen> {
+  bool _requestSent = false;
+  bool _isFriend = false;
 
-          // Avatar overlapping the card
-          Positioned(
-            top: 30, // Adjust this value to control overlap
-            left: MediaQuery.of(context).size.width / 2 - 50, // Center the avatar
-            child: CircleAvatar(
-              radius: 50,
-              backgroundColor: Colors.white,
-              backgroundImage: NetworkImage(friendImageUrl),
-            ),
-          ),
-        ],
-      ),
-    );
+  @override
+  void initState() {
+    super.initState();
+    _checkFriendStatus();
   }
 
-  Widget _infoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          const Icon(Icons.info_outline, size: 18, color: Colors.blue),
-          const SizedBox(width: 8),
-          Text("$label: ", style: const TextStyle(fontWeight: FontWeight.w600)),
-          Expanded(child: Text(value, overflow: TextOverflow.ellipsis)),
-        ],
-      ),
+  Future<void> _checkFriendStatus() async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null || currentUser.uid == widget.friendId) {
+      setState(() {
+        _requestSent = true;
+      });
+      return;
+    }
+
+    final userDoc =
+        await FirebaseFirestore.instance.collection('users').doc(currentUser.uid).get();
+
+    final data = userDoc.data();
+    if (data != null && data['friends'] != null) {
+      final List<dynamic> friends = data['friends'];
+      if (friends.contains(widget.friendId)) {
+        setState(() {
+          _isFriend = true;
+        });
+        return;
+      }
+    }
+
+    final requestDoc = await FirebaseFirestore.instance
+        .collection('friend_requests')
+        .doc(widget.friendId)
+        .collection('requests')
+        .doc(currentUser.uid)
+        .get();
+
+    if (requestDoc.exists) {
+      setState(() {
+        _requestSent = true;
+      });
+    }
+  }
+
+  Future<void> _sendFriendRequest(BuildContext context) async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null || currentUser.uid == widget.friendId) return;
+
+    try {
+      final senderSnapshot =
+          await FirebaseFirestore.instance.collection('users').doc(currentUser.uid).get();
+
+      if (!senderSnapshot.exists) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Your profile was not found.")),
+        );
+        return;
+      }
+
+      final senderData = senderSnapshot.data() as Map<String, dynamic>;
+
+      final requestRef = FirebaseFirestore.instance
+          .collection('friend_requests')
+          .doc(widget.friendId)
+          .collection('requests')
+          .doc(currentUser.uid);
+
+      await requestRef.set({
+        'senderId': currentUser.uid,
+        'senderName': senderData['name'],
+        'senderImageUrl': senderData['profileImageUrl'],
+        'timestamp': FieldValue.serverTimestamp(),
+        'status': 'pending',
+      });
+
+      setState(() {
+        _requestSent = true;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Friend request sent!")),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error sending request: $e")),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currentUser = FirebaseAuth.instance.currentUser;
+
+    return FutureBuilder<DocumentSnapshot>(
+      future: FirebaseFirestore.instance.collection('users').doc(widget.friendId).get(),
+      builder: (context, userSnapshot) {
+        if (userSnapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (!userSnapshot.hasData || !userSnapshot.data!.exists) {
+          return const Center(child: Text("Friend not found"));
+        }
+
+        final friendData = userSnapshot.data!.data() as Map<String, dynamic>;
+
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(widget.friendName, style: const TextStyle(color: Colors.white)),
+            backgroundColor: Colors.blueAccent,
+            automaticallyImplyLeading: false,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back, color: Colors.white),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ),
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 30.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircleAvatar(
+                    radius: 60,
+                    backgroundImage: NetworkImage(
+                      widget.friendImageUrl.isNotEmpty
+                          ? widget.friendImageUrl
+                          : 'https://example.com/default-avatar.png',
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    widget.friendName,
+                    style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    friendData['email'],
+                    style: const TextStyle(fontSize: 16, color: Colors.grey),
+                  ),
+                  const SizedBox(height: 30),
+
+                  if (currentUser != null &&
+                      currentUser.uid != widget.friendId &&
+                      !_requestSent &&
+                      !_isFriend)
+                    ElevatedButton.icon(
+                      onPressed: () => _sendFriendRequest(context),
+                      icon: const Icon(Icons.person_add),
+                      label: const Text("Send"),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blueAccent,
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        textStyle: const TextStyle(fontSize: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+
+                  if (_requestSent)
+                    const Text(
+                      "Request already sent",
+                      style: TextStyle(color: Colors.grey),
+                    ),
+
+                  // if (_isFriend)
+                  //   const Text(
+                  //     "Already your friend",
+                  //     style: TextStyle(color: Colors.green),
+                  //   ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

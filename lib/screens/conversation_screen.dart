@@ -1,410 +1,415 @@
-import 'dart:async';
-import 'dart:math';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
 import 'package:flutter_sound/flutter_sound.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:chat_application/screens/call_screen.dart';
-import 'package:chat_application/screens/friend_info_screen.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:just_audio/just_audio.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart';
+import 'package:video_player/video_player.dart';
+import 'package:photo_view/photo_view.dart';
+
+import '../../api/apis.dart';
+import '../../models/message.dart';
+import '../../widgets/message_card.dart';
+import '../services/cloudinary_service.dart';
+import '../screens/friend_info_screen.dart';
+
 class ConversationScreen extends StatefulWidget {
-  final String name;
-  final String imageUrl;
+  final String chatId;
+  final String userId;
 
   const ConversationScreen({
     super.key,
-    required this.name,
-    required this.imageUrl,
+    required this.chatId,
+    required this.userId,
   });
 
   @override
-  _ConversationScreenState createState() => _ConversationScreenState();
+  State<ConversationScreen> createState() => _ConversationScreenState();
 }
 
 class _ConversationScreenState extends State<ConversationScreen> {
-  final TextEditingController _controller = TextEditingController();
-  final List<Map<String, String>> messages = []; // Updated to ensure consistent types
-  bool _isRecording = false;
-  bool _isCancelled = false;
-  double _dragDistance = 0.0;
-  int _recordingSeconds = 0;
-  Timer? _recordingTimer;
-  final FlutterSoundRecorder _recorder = FlutterSoundRecorder();
-  final FlutterSoundPlayer _player = FlutterSoundPlayer();
-  final Random _random = Random();
-  Timer? _spectrumTimer;
-  List<double> _spectrumHeights = List.generate(10, (_) => 10.0);
+  final TextEditingController _textController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  final FlutterSoundRecorder _audioRecorder = FlutterSoundRecorder();
+
+  final bool _isRecording = false;
+  final bool _isDeleting = false;
+  late String userName = '';
+  late String userPic = '';
+  late bool isOnline = false;
+  late DateTime lastActive = DateTime.now();
+  String? _currentUserId;
+  
+  // For media playback
+  VideoPlayerController? _videoController;
+  bool isVideoPlaying = false;
+  bool isAudioPlaying = false;
+  String? _currentPlayingAudioUrl;
 
   @override
   void initState() {
     super.initState();
-    _initializeRecorder();
-    _player.openPlayer();
+    _initRecorder();
+    _getUserDetails();
+    _initCurrentUser();
   }
 
-  Future<void> _initializeRecorder() async {
+  Future<void> _initCurrentUser() async {
+    final firebaseUser = FirebaseAuth.instance.currentUser;
+    setState(() {
+      _currentUserId = APIs.user?.uid ?? firebaseUser?.uid;
+    });
+
+    if (_currentUserId == null) {
+      print('Warning: No current user ID found');
+    }
+  }
+
+  Future<void> _initRecorder() async {
+    await _audioRecorder.openRecorder();
+  }
+
+  Future<void> _getUserDetails() async {
     try {
-      await _recorder.openRecorder();
-      await Permission.microphone.request();
+      final userDoc = await FirebaseFirestore.instance.collection('users').doc(widget.userId).get();
+      if (userDoc.exists) {
+        setState(() {
+          userName = userDoc['name'] ?? 'Unknown';
+          userPic = userDoc['image'] ?? '';
+          isOnline = userDoc['is_online'] ?? false;
+          lastActive = userDoc['last_active']?.toDate() ?? DateTime.now();
+        });
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to initialize recorder: $e')),
-      );
+      print('Error fetching user details: $e');
     }
   }
 
-  void _startRecording() async {
-    PermissionStatus status = await Permission.microphone.request();
+  @override
+  void dispose() {
+    _textController.dispose();
+    _scrollController.dispose();
+    _audioPlayer.dispose();
+    _audioRecorder.closeRecorder();
+    _videoController?.dispose();
+    super.dispose();
+  }
 
-    if (status.isGranted) {
-      if (_recorder.isStopped) {
-        await _recorder.openRecorder();
-      }
+  void _sendMessage({String? content, MessageType type = MessageType.text}) async {
+    if (_currentUserId == null) {
+      print('Cannot send message - no current user ID');
+      return;
+    }
 
-      setState(() {
-        _isRecording = true;
-        _isCancelled = false;
-        _dragDistance = 0.0;
-        _recordingSeconds = 0;
-      });
+    if ((content != null && content.trim().isNotEmpty) || type != MessageType.text) {
+      final message = Message(
+        id: const Uuid().v4(),
+        senderId: _currentUserId!,
+        content: content ?? '',
+        type: type,
+        timestamp: DateTime.now(),
+        seen: false,
+        delivered: false,
+      );
 
-      try {
-        await _recorder.startRecorder(toFile: 'voice_note.aac');
+      await APIs.sendMessage(widget.chatId, widget.userId, message);
+      _textController.clear();
+      _scrollToBottom();
+    }
+  }
 
-        // Start the recording timer
-        _recordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-          setState(() {
-            _recordingSeconds++;
-          });
-        });
-
-        // Simulate spectrum animation
-        _spectrumTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
-          setState(() {
-            _spectrumHeights = List.generate(
-              10,
-                  (_) => _random.nextDouble() * 30 + 10, // Simulate random decibel levels
-            );
-          });
-        });
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to start recording: $e')),
+  void _scrollToBottom() {
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
         );
-        setState(() {
-          _isRecording = false;
-        });
       }
-    } else if (status.isDenied) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Microphone permission is required to record audio.')),
-      );
-    } else if (status.isPermanentlyDenied) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Microphone permission is permanently denied. Please enable it in settings.')),
-      );
-    }
-  }
-
-  void _cancelRecording() async {
-    setState(() {
-      _isRecording = false;
-      _isCancelled = true;
     });
-
-    await _recorder.stopRecorder();
-    _recordingTimer?.cancel();
-    _spectrumTimer?.cancel();
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Recording canceled.')),
-    );
   }
 
-  void _sendVoiceNote() async {
-    if (!_isCancelled) {
-      try {
-        final path = await _recorder.stopRecorder(); // Ensure this returns a String
-        if (path != null) {
-          setState(() {
-            messages.add({
-              "sender": "Me",
-              "type": "voice",
-              "path": path.toString(), // Ensure the path is a string
-              "time": "Just Now",
-            });
-          });
+  Future<void> _pickFile() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.any);
+
+      if (result != null && result.files.isNotEmpty) {
+        final file = File(result.files.first.path!);
+        final url = await CloudinaryService.uploadFile(file);
+        final fileType = result.files.first.extension?.toLowerCase();
+
+        if (fileType != null) {
+          if (['jpg', 'jpeg', 'png', 'gif', 'webp'].contains(fileType)) {
+            _sendMessage(content: url, type: MessageType.image);
+          } else if (['mp4', 'mov', 'avi', 'mkv', 'webm'].contains(fileType)) {
+            _sendMessage(content: url, type: MessageType.video);
+          } else if (['mp3', 'wav', 'm4a', 'aac'].contains(fileType)) {
+            _sendMessage(content: url, type: MessageType.audio);
+          } else {
+            _sendMessage(content: url, type: MessageType.file);
+          }
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to retrieve recording path.')),
-          );
+          _sendMessage(content: url, type: MessageType.file);
         }
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to stop recording: $e')),
-        );
       }
-    }
-
-    setState(() {
-      _isRecording = false;
-    });
-
-    // Stop the timers
-    _recordingTimer?.cancel();
-    _spectrumTimer?.cancel();
-  }
-
-  void _sendMessage() {
-    if (_controller.text.isNotEmpty) {
-      setState(() {
-        messages.add({
-          "sender": "Me",
-          "type": "text",
-          "message": _controller.text,
-          "time": "Just Now",
-        });
-      });
-      _controller.clear();
-    }
-  }
-
-  Widget _buildVoiceSpectrum() {
-    final minutes = (_recordingSeconds ~/ 60).toString().padLeft(2, '0');
-    final seconds = (_recordingSeconds % 60).toString().padLeft(2, '0');
-
-    return Container(
-      height: 50,
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      decoration: BoxDecoration(
-        color: Colors.blueAccent.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(25),
-      ),
-      child: Row(
-        children: [
-          Text(
-            "$minutes:$seconds",
-            style: const TextStyle(
-              color: Colors.blueAccent,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Row(
-              children: List.generate(
-                _spectrumHeights.length,
-                    (index) => AnimatedContainer(
-                  duration: const Duration(milliseconds: 100),
-                  width: 5,
-                  height: _spectrumHeights[index],
-                  margin: const EdgeInsets.symmetric(horizontal: 3),
-                  decoration: BoxDecoration(
-                    color: Colors.blueAccent,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildVoiceMessage(String? path) {
-    if (path == null || path.isEmpty) {
-      return const Text('Invalid voice note');
-    }
-
-    bool isPlaying = false;
-    Timer? spectrumTimer;
-    List<double> spectrumHeights = List.generate(10, (_) => 10.0);
-
-    void _playAudio() async {
-      if (!_player.isOpen()) {
-        await _player.openPlayer();
-      }
-
-      setState(() {
-        isPlaying = true;
-      });
-
-      await _player.startPlayer(
-        fromURI: path,
-        whenFinished: () {
-          setState(() {
-            isPlaying = false;
-          });
-          spectrumTimer?.cancel();
-        },
+    } catch (e) {
+      print('File picking error: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to send file: $e')),
       );
-
-      // Start spectrum animation for playback
-      spectrumTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
-        setState(() {
-          spectrumHeights = List.generate(
-            10,
-                (_) => _random.nextDouble() * 30 + 10, // Simulate playback spectrum
-          );
-        });
-      });
     }
+  }
 
-    void _stopAudio() async {
-      await _player.stopPlayer();
-      setState(() {
-        isPlaying = false;
-      });
-      spectrumTimer?.cancel();
-    }
-
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 5),
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.blueAccent.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(15),
-      ),
-      child: Row(
-        children: [
-          IconButton(
-            icon: Icon(
-              isPlaying ? Icons.stop : Icons.play_arrow,
-              color: Colors.blueAccent,
-            ),
-            onPressed: isPlaying ? _stopAudio : _playAudio,
+  void _showFullScreenImage(String imageUrl) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            iconTheme: const IconThemeData(color: Colors.white),
           ),
-          Expanded(
-            child: Row(
-              children: List.generate(
-                spectrumHeights.length,
-                    (index) => AnimatedContainer(
-                  duration: const Duration(milliseconds: 100),
-                  width: 5,
-                  height: spectrumHeights[index],
-                  margin: const EdgeInsets.symmetric(horizontal: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.blueAccent,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
+          body: Center(
+            child: PhotoView(
+              imageProvider: NetworkImage(imageUrl),
+              minScale: PhotoViewComputedScale.contained,
+              maxScale: PhotoViewComputedScale.covered * 2,
             ),
           ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildTextMessage(Map<String, String> message, bool isMe) {
+  void _playVideo(String videoUrl) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            iconTheme: const IconThemeData(color: Colors.white),
+          ),
+          body: Center(
+            child: FutureBuilder(
+              future: _initializeVideoPlayer(videoUrl),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.done) {
+                  return Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      AspectRatio(
+                        aspectRatio: _videoController!.value.aspectRatio,
+                        child: VideoPlayer(_videoController!),
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          isVideoPlaying ? Icons.pause : Icons.play_arrow,
+                          size: 40,
+                          color: Colors.blueAccent,
+                        ),
+                        onPressed: _toggleVideoPlayback,
+                      ),
+                    ],
+                  );
+                } else {
+                  return const CircularProgressIndicator();
+                }
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _initializeVideoPlayer(String videoUrl) async {
+    _videoController?.dispose();
+    _videoController = VideoPlayerController.network(videoUrl);
+    await _videoController!.initialize();
+    await _videoController!.setLooping(true);
+    await _videoController!.play();
+    setState(() {
+      isVideoPlaying = true;
+    });
+  }
+
+  void _toggleVideoPlayback() {
+    if (_videoController != null) {
+      if (isVideoPlaying) {
+        _videoController?.pause();
+      } else {
+        _videoController?.play();
+      }
+      setState(() {
+        isVideoPlaying = !isVideoPlaying;
+      });
+    }
+  }
+
+  void _playAudio(String audioUrl) {
+    if (_currentPlayingAudioUrl == audioUrl && isAudioPlaying) {
+      _audioPlayer.pause();
+      setState(() {
+        isAudioPlaying = false;
+      });
+    } else {
+      _audioPlayer.setUrl(audioUrl).then((_) => _audioPlayer.play());
+      _audioPlayer.playerStateStream.listen((playerState) {
+        setState(() {
+          isAudioPlaying = (playerState.playing);
+          _currentPlayingAudioUrl = audioUrl;
+        });
+      });
+    }
+  }
+
+  Widget _buildMessageItem(Message message) {
+    final isMe = message.senderId == _currentUserId;
+    final time = DateFormat('h:mm a').format(message.timestamp);
+
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.7),
-        decoration: BoxDecoration(
-          color: isMe ? Colors.blueAccent : Colors.grey[300],
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(15),
-            topRight: const Radius.circular(15),
-            bottomLeft: isMe ? const Radius.circular(15) : Radius.zero,
-            bottomRight: isMe ? Radius.zero : const Radius.circular(15),
-          ),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.75,
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        margin: const EdgeInsets.symmetric(vertical: 5),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              message["message"] ?? "",
-              style: TextStyle(
-                color: isMe ? Colors.white : Colors.black,
+        child: GestureDetector(
+          onTap: () {
+            if (message.type == MessageType.image) {
+              _showFullScreenImage(message.content);
+            } else if (message.type == MessageType.video) {
+              _playVideo(message.content);
+            }
+          },
+          child: Container(
+            margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isMe ? Colors.blueAccent : Colors.grey[300],
+              borderRadius: BorderRadius.only(
+                topLeft: const Radius.circular(12),
+                topRight: const Radius.circular(12),
+                bottomLeft: isMe ? const Radius.circular(12) : const Radius.circular(4),
+                bottomRight: isMe ? const Radius.circular(4) : const Radius.circular(12),
               ),
             ),
-            const SizedBox(height: 5),
-            Text(
-              message["time"] ?? "",
-              style: TextStyle(
-                color: isMe ? Colors.white70 : Colors.black54,
-                fontSize: 12,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (message.type == MessageType.image)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.network(
+                      message.content,
+                      width: 200,
+                      height: 200,
+                      fit: BoxFit.cover,
+                    ),
+                  )
+                else if (message.type == MessageType.video)
+                  _buildVideoThumbnail(message.content)
+                else if (message.type == MessageType.audio)
+                  _buildAudioPlayer(message.content, isMe)
+                else if (message.type == MessageType.file)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.insert_drive_file, size: 40),
+                      Text(
+                        'File Attachment',
+                        style: TextStyle(
+                          color: isMe ? Colors.white : Colors.black,
+                        ),
+                      ),
+                    ],
+                  )
+                else
+                  IntrinsicWidth(
+                    child: Text(
+                      message.content,
+                      style: TextStyle(
+                        color: isMe ? Colors.white : Colors.black,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 4),
+                Align(
+                  alignment: Alignment.bottomRight,
+                  child: Text(
+                    time,
+                    style: TextStyle(
+                      color: isMe ? Colors.white70 : Colors.black54,
+                      fontSize: 10,
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildOptionButton(IconData icon, String label) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
+  Widget _buildVideoThumbnail(String videoUrl) {
+    return Stack(
+      alignment: Alignment.center,
       children: [
-        CircleAvatar(
-          radius: 25,
-          backgroundColor: Colors.blueAccent.withOpacity(0.2),
-          child: Icon(icon, color: Colors.blueAccent),
+        Container(
+          width: 200,
+          height: 200,
+          color: Colors.black,
+          child: FutureBuilder(
+            future: _getVideoThumbnail(videoUrl),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.done &&
+                  snapshot.hasData) {
+                return Image.network(
+                  snapshot.data!,
+                  fit: BoxFit.cover,
+                );
+              }
+              return const Center(child: CircularProgressIndicator());
+            },
+          ),
         ),
-        const SizedBox(height: 5),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 12, color: Colors.black),
-        ),
+        const Icon(Icons.play_circle_filled, size: 50, color: Colors.white),
       ],
     );
   }
 
-  void _showAddOptions() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(20),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              _buildOptionButton(Icons.image, "Gallery"),
-              _buildOptionButton(Icons.camera_alt, "Image"),
-              _buildOptionButton(Icons.audiotrack, "Audio"),
-              _buildOptionButton(Icons.videocam, "Video"),
-              _buildOptionButton(Icons.insert_drive_file, "Document"),
-              _buildOptionButton(Icons.location_on, "Location"),
-            ],
-          ),
-        ),
-      ),
-    );
+  Future<String> _getVideoThumbnail(String videoUrl) async {
+    if (videoUrl.contains('cloudinary.com')) {
+      return videoUrl.replaceAll(RegExp(r'\.(mp4|mov|avi|mkv|webm)$'), '.jpg');
+    }
+    return 'https://via.placeholder.com/200x200?text=Video';
   }
 
-  void _showRemoveFriendDialog() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text("Remove Friend"),
-          content: const Text("Are you sure you want to remove this friend?"),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context); // Close the dialog
-              },
-              child: const Text("Cancel", style: TextStyle(color: Colors.grey)),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context); // Close the dialog
-                Navigator.pop(context); // Navigate back to the previous screen
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Friend removed successfully!")),
-                );
-              },
-              child: const Text("Remove", style: TextStyle(color: Colors.red)),
-            ),
-          ],
-        );
-      },
+  Widget _buildAudioPlayer(String audioUrl, bool isMe) {
+    return Row(
+      children: [
+        IconButton(
+          icon: Icon(
+            _currentPlayingAudioUrl == audioUrl && isAudioPlaying 
+                ? Icons.pause 
+                : Icons.play_arrow,
+            color: isMe ? Colors.white : Colors.black,
+          ),
+          onPressed: () => _playAudio(audioUrl),
+        ),
+        const Text('Audio Message', style: TextStyle(color: Colors.white)),
+      ],
     );
   }
 
@@ -413,161 +418,111 @@ class _ConversationScreenState extends State<ConversationScreen> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.blueAccent,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white), // White back button
-          onPressed: () {
-            Navigator.pop(context); // Navigate back
-          },
-        ),
+        foregroundColor: Colors.white,
         title: Row(
           children: [
-            CircleAvatar(
-              backgroundImage: NetworkImage(widget.imageUrl),
-              radius: 20,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                widget.name,
-                style: const TextStyle(color: Colors.white),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.call, color: Colors.white), // White call button
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => CallScreen(
-                    callerName: widget.name,
-                    callerImageUrl: widget.imageUrl,
-                  ),
-                ),
-              );
-            },
-          ),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert, color: Colors.white), // Three-dots menu
-            onSelected: (value) {
-              if (value == 'info') {
+            GestureDetector(
+              onTap: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (context) => FriendInfoScreen(
-                      friendName: widget.name,
-                      friendImageUrl: widget.imageUrl,
+                      friendId: widget.userId,
+                      friendName: userName,
+                      friendImageUrl: userPic,
                     ),
                   ),
                 );
-              } else if (value == 'remove') {
-                _showRemoveFriendDialog();
-              }
-            },
-            itemBuilder: (BuildContext context) => [
-              const PopupMenuItem(
-                value: 'info',
-                child: Text('Friend Info'),
+              },
+              child: CircleAvatar(
+                radius: 20,
+                backgroundImage: NetworkImage(userPic),
               ),
-              const PopupMenuItem(
-                value: 'remove',
-                child: Text('Remove Friend'),
-              ),
-            ],
-          ),
-        ],
-        centerTitle: true,
+            ),
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(userName),
+                Text(
+                  isOnline
+                      ? 'Online'
+                      : 'Last Active: ${lastActive.toLocal().toString().split(' ')[0]}',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
       body: Column(
         children: [
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.all(10),
-              itemCount: messages.length,
-              itemBuilder: (context, index) {
-                final message = messages[index];
-                bool isMe = message["sender"] == "Me";
-                return Align(
-                  alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 5),
-                    child: message["type"] == "voice"
-                        ? _buildVoiceMessage(message["path"])
-                        : _buildTextMessage(message, isMe),
-                  ),
+            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: APIs.getAllMessages(widget.chatId),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                if (snapshot.hasError) {
+                  return const Center(child: Text('Error loading messages'));
+                }
+
+                final docs = snapshot.data?.docs ?? [];
+                if (docs.isEmpty) {
+                  return const Center(child: Text('No messages yet'));
+                }
+
+                final messages = docs
+                    .map((doc) {
+                      try {
+                        return Message.fromJson(doc.data());
+                      } catch (e) {
+                        print("Error parsing message: $e");
+                        return null;
+                      }
+                    })
+                    .whereType<Message>()
+                    .toList();
+
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  _scrollToBottom();
+                });
+
+                return ListView.builder(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  itemCount: messages.length,
+                  itemBuilder: (context, index) {
+                    return _buildMessageItem(messages[index]);
+                  },
                 );
               },
             ),
           ),
-          if (_isRecording) _buildVoiceSpectrum(),
+          const Divider(height: 1),
           Padding(
-            padding: const EdgeInsets.all(10),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             child: Row(
               children: [
+                IconButton(
+                  icon: const Icon(Icons.attach_file),
+                  onPressed: _pickFile,
+                ),
                 Expanded(
-                  child: TextFormField(
-                    controller: _controller,
-                    decoration: InputDecoration(
-                      hintText: _isRecording
-                          ? "Slide left to cancel"
-                          : "Type a message",
-                      filled: true,
-                      fillColor: Colors.grey[200],
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(30),
-                      ),
-                      suffixIcon: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: Icon(Icons.add, color: Colors.grey[700]),
-                            onPressed: _showAddOptions,
-                          ),
-                          GestureDetector(
-                            onLongPress: _startRecording,
-                            onLongPressUp: () {
-                              if (_dragDistance < -100) {
-                                _cancelRecording();
-                              } else {
-                                _sendVoiceNote();
-                              }
-                            },
-                            onHorizontalDragUpdate: (details) {
-                              setState(() {
-                                _dragDistance += details.delta.dx;
-                                if (_dragDistance < -100) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Slide left to cancel recording.')),
-                                  );
-                                }
-                              });
-                            },
-                            child: Icon(
-                              Icons.mic,
-                              color: _isRecording ? Colors.red : Colors.grey[700],
-                            ),
-                          ),
-                        ],
-                      ),
+                  child: TextField(
+                    controller: _textController,
+                    decoration: const InputDecoration(
+                      hintText: 'Type a message',
+                      border: InputBorder.none,
                     ),
+                    onSubmitted: (value) => _sendMessage(content: value),
                   ),
                 ),
-                // AI Translate Button
                 IconButton(
-                  icon: const Icon(Icons.translate, color: Colors.blueAccent),
-                  onPressed: () {
-                    // Handle AI Translate functionality
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('AI Translate feature coming soon!')),
-                    );
-                  },
-                ),
-                // Send Button
-                IconButton(
-                  icon: const Icon(Icons.send, color: Colors.blueAccent),
-                  onPressed: _sendMessage,
+                  icon: const Icon(Icons.send),
+                  onPressed: () => _sendMessage(content: _textController.text),
                 ),
               ],
             ),
@@ -575,14 +530,5 @@ class _ConversationScreenState extends State<ConversationScreen> {
         ],
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _recorder.closeRecorder();
-    _player.closePlayer();
-    _recordingTimer?.cancel();
-    _spectrumTimer?.cancel();
-    super.dispose();
   }
 }

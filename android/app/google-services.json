@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "130495980862",
+    "project_id": "ms-intouch-1a58b",
+    "storage_bucket": "ms-intouch-1a58b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:130495980862:android:648c5d636c99085c36386f",
+        "android_client_info": {
+          "package_name": "com.example.chat_application"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "130495980862-mf1bsob4cg85l6d39fg9s0h8a1ikhfqt.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.chat_application",
+            "certificate_hash": "d87277cb5297d0c67a653e4a2e2d8d7f477158ed"
+          }
+        },
+        {
+          "client_id": "130495980862-6vno425f7mkvhhmbpff0ts4o4smk2hbk.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAloG-srV8IQWJEhrckAWvYJsz629lJ8hc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "130495980862-6vno425f7mkvhhmbpff0ts4o4smk2hbk.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

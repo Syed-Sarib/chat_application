@@ -4,7 +4,6 @@ import 'chat_screen.dart';
 import 'profile_screen.dart';
 import 'group_screen.dart';
 import 'status_screen.dart';
-
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -28,7 +27,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _pageController.animateToPage(
       index,
       duration: Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
+      curve: Curves.linear,
     );
   }
 
@@ -42,8 +41,8 @@ class _HomeScreenState extends State<HomeScreen> {
             _selectedIndex = index;
           });
         },
-        children: _screens,
-        physics:BouncingScrollPhysics(), // Disable swipe to switch pages
+        physics:BouncingScrollPhysics(),
+        children: _screens, // Disable swipe to switch pages
       ),
       bottomNavigationBar: CurvedNavigationBar(
         index: _selectedIndex,
@@ -51,8 +50,8 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: Colors.transparent, // Background color behind the navbar
         color: Colors.blueAccent, // Navbar color
         buttonBackgroundColor: Colors.transparent, // Floating button color
-        animationDuration: Duration(milliseconds: 500),
-        animationCurve: Curves.easeInOutCubicEmphasized,
+        animationDuration: Duration(milliseconds: 300),
+        animationCurve: Curves.easeInOut,
         items: [
           Column(
             mainAxisSize: MainAxisSize.min,

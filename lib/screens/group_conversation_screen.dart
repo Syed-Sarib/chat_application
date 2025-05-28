@@ -1,16 +1,29 @@
-import 'dart:async';
-import 'dart:math';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
 import 'package:flutter_sound/flutter_sound.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:just_audio/just_audio.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart';
+import 'package:video_player/video_player.dart';
+import 'package:photo_view/photo_view.dart';
+import 'edit_group_screen.dart';
+
+import '../../models/user.dart'; // Your UserModel class
+import '../../services/cloudinary_service.dart';
 
 class GroupConversationScreen extends StatefulWidget {
+  final String groupId;
   final String groupName;
   final String groupImageUrl;
-  final List<Map<String, String>> participants;
+  final List<String> participants;
 
   const GroupConversationScreen({
     super.key,
+    required this.groupId,
     required this.groupName,
     required this.groupImageUrl,
     required this.participants,
@@ -22,282 +35,475 @@ class GroupConversationScreen extends StatefulWidget {
 
 class _GroupConversationScreenState extends State<GroupConversationScreen> {
   final TextEditingController _controller = TextEditingController();
-  final List<Map<String, String>> messages = [];
+  final ScrollController _scrollController = ScrollController();
+  final FlutterSoundRecorder _audioRecorder = FlutterSoundRecorder();
+  final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
+
+  VideoPlayerController? _videoController;
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  bool isVideoPlaying = false;
+  bool isAudioPlaying = false;
+  String? _currentPlayingAudioUrl;
+
   bool _isRecording = false;
-  bool _isCancelled = false;
-  double _dragDistance = 0.0;
-  int _recordingSeconds = 0;
-  Timer? _recordingTimer;
-  final FlutterSoundRecorder _recorder = FlutterSoundRecorder();
-  final FlutterSoundPlayer _player = FlutterSoundPlayer();
-  final Random _random = Random();
-  Timer? _spectrumTimer;
-  List<double> _spectrumHeights = List.generate(10, (_) => 10.0);
+  bool _isDeleting = false;
+  VideoPlayerController? _videoPlayerController;
+
+  late String groupName;
+  late String groupImageUrl;
+  late List<String> participants;
 
   @override
   void initState() {
     super.initState();
-    _initializeRecorder();
-    _player.openPlayer();
+    groupName = widget.groupName;
+    groupImageUrl = widget.groupImageUrl;
+    participants = widget.participants;
+    _initRecorder();
   }
 
-  Future<void> _initializeRecorder() async {
+  Future<void> _initRecorder() async {
+    await _audioRecorder.openRecorder();
+  }
+
+  Future<void> _refreshGroupDetails() async {
     try {
-      await _recorder.openRecorder();
-      await Permission.microphone.request();
+      final groupDoc = await FirebaseFirestore.instance.collection('groups').doc(widget.groupId).get();
+      if (groupDoc.exists) {
+        setState(() {
+          groupName = groupDoc['name'];
+          groupImageUrl = groupDoc['image'];
+          participants = List<String>.from(groupDoc['members'] ?? []);
+        });
+      }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to initialize recorder: $e')),
+        SnackBar(content: Text('Failed to refresh group details: $e')),
       );
     }
   }
 
-  void _startRecording() async {
-    PermissionStatus status = await Permission.microphone.request();
+  @override
+  void dispose() {
+    _controller.dispose();
+    _scrollController.dispose();
+    _audioPlayer.dispose();
+    _audioRecorder.closeRecorder();
+    _videoPlayerController?.dispose();
+    super.dispose();
+  }
 
-    if (status.isGranted) {
-      if (_recorder.isStopped) {
-        await _recorder.openRecorder();
-      }
+  Future<void> _sendMessage({String? content, String type = 'text'}) async {
+    if (content == null && _controller.text.trim().isEmpty) return;
 
-      setState(() {
-        _isRecording = true;
-        _isCancelled = false;
-        _dragDistance = 0.0;
-        _recordingSeconds = 0;
+    final currentUser = await UserModel.getUserById(currentUserId);
+    final timestamp = Timestamp.now();
+
+    try {
+      // Add message to messages subcollection
+      await FirebaseFirestore.instance
+          .collection('groups')
+          .doc(widget.groupId)
+          .collection('messages')
+          .add({
+        'senderId': currentUserId,
+        'senderName': currentUser?.name ?? 'Unknown',
+        'senderAvatar': currentUser?.image ?? '',
+        'content': content ?? _controller.text.trim(),
+        'timestamp': timestamp,
+        'type': type,
       });
 
-      try {
-        await _recorder.startRecorder(toFile: 'voice_note.aac');
+      // Update group's recent message
+      await FirebaseFirestore.instance
+          .collection('groups')
+          .doc(widget.groupId)
+          .update({
+        'recentMessage': content ?? _controller.text.trim(),
+        'recentTimestamp': timestamp,
+      });
 
-        _recordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-          setState(() {
-            _recordingSeconds++;
-          });
-        });
-
-        _spectrumTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
-          setState(() {
-            _spectrumHeights = List.generate(
-              10,
-              (_) => _random.nextDouble() * 30 + 10,
-            );
-          });
-        });
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to start recording: $e')),
-        );
-        setState(() {
-          _isRecording = false;
-        });
+      if (content == null) {
+        _controller.clear();
       }
-    } else if (status.isDenied) {
+      _scrollToBottom();
+    } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Microphone permission is required to record audio.')),
-      );
-    } else if (status.isPermanentlyDenied) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Microphone permission is permanently denied. Please enable it in settings.')),
+        SnackBar(content: Text('Failed to send message: $e')),
       );
     }
   }
 
-  void _cancelRecording() async {
-    setState(() {
-      _isRecording = false;
-      _isCancelled = true;
+  void _scrollToBottom() {
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
     });
-
-    await _recorder.stopRecorder();
-    _recordingTimer?.cancel();
-    _spectrumTimer?.cancel();
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Recording canceled.')),
-    );
   }
 
-  void _sendVoiceNote() async {
-    if (!_isCancelled) {
-      try {
-        final path = await _recorder.stopRecorder();
-        if (path != null) {
-          setState(() {
-            messages.add({
-              "sender": "Me",
-              "type": "voice",
-              "path": path.toString(),
-              "time": "Just Now",
-            });
-          });
+  Future<void> _pickAndSendFile() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.any,
+        allowMultiple: false,
+      );
+
+      if (result != null && result.files.isNotEmpty) {
+        final file = File(result.files.first.path!);
+        final url = await CloudinaryService.uploadFile(file);
+        final fileType = result.files.first.extension?.toLowerCase();
+
+        if (fileType != null) {
+          if (['jpg', 'jpeg', 'png', 'gif', 'webp'].contains(fileType)) {
+            await _sendMessage(content: url, type: 'image');
+          } else if (['mp4', 'mov', 'avi', 'mkv', 'webm'].contains(fileType)) {
+            await _sendMessage(content: url, type: 'video');
+          } else if (['mp3', 'wav', 'm4a', 'aac'].contains(fileType)) {
+            await _sendMessage(content: url, type: 'audio');
+          } else {
+            await _sendMessage(content: url, type: 'file');
+          }
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to retrieve recording path.')),
-          );
+          await _sendMessage(content: url, type: 'file');
         }
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to stop recording: $e')),
-        );
       }
-    }
-
-    setState(() {
-      _isRecording = false;
-    });
-
-    _recordingTimer?.cancel();
-    _spectrumTimer?.cancel();
-  }
-
-  void _sendMessage() {
-    if (_controller.text.isNotEmpty) {
-      setState(() {
-        messages.add({
-          "sender": "Me",
-          "type": "text",
-          "message": _controller.text,
-          "time": "Just Now",
-        });
-      });
-      _controller.clear();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to send file: $e')),
+      );
     }
   }
 
-  Widget _buildTextMessage(Map<String, String> message, bool isMe) {
-    return Align(
-      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.7),
-        decoration: BoxDecoration(
-          color: isMe ? Colors.blueAccent : Colors.grey[300],
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(15),
-            topRight: const Radius.circular(15),
-            bottomLeft: isMe ? const Radius.circular(15) : Radius.zero,
-            bottomRight: isMe ? Radius.zero : const Radius.circular(15),
-          ),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        margin: const EdgeInsets.symmetric(vertical: 5),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (!isMe)
-              Text(
-                message["sender"] ?? "",
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                  color: Colors.black54,
-                ),
-              ),
-            Text(
-              message["message"] ?? "",
-              style: TextStyle(
-                color: isMe ? Colors.white : Colors.black,
-              ),
-            ),
-            const SizedBox(height: 5),
-            Text(
-              message["time"] ?? "",
-              style: TextStyle(
-                color: isMe ? Colors.white70 : Colors.black54,
-                fontSize: 12,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget _buildMessageBubble(DocumentSnapshot messageDoc) {
+    final message = messageDoc.data() as Map<String, dynamic>;
+    final isMe = message['senderId'] == currentUserId;
+    final time = message['timestamp'] != null
+        ? DateFormat('h:mm a').format((message['timestamp'] as Timestamp).toDate())
+        : 'Unknown time';
 
-  Widget _buildVoiceSpectrum() {
-    final minutes = (_recordingSeconds ~/ 60).toString().padLeft(2, '0');
-    final seconds = (_recordingSeconds % 60).toString().padLeft(2, '0');
+    return FutureBuilder<UserModel?>(
+      future: UserModel.getUserById(message['senderId'] ?? ''),
+      builder: (context, snapshot) {
+        final user = snapshot.data;
 
-    return Container(
-      height: 50,
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      decoration: BoxDecoration(
-        color: Colors.blueAccent.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(25),
-      ),
-      child: Row(
-        children: [
-          Text(
-            "$minutes:$seconds",
-            style: const TextStyle(
-              color: Colors.blueAccent,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Row(
-              children: List.generate(
-                _spectrumHeights.length,
-                (index) => AnimatedContainer(
-                  duration: const Duration(milliseconds: 100),
-                  width: 5,
-                  height: _spectrumHeights[index],
-                  margin: const EdgeInsets.symmetric(horizontal: 3),
-                  decoration: BoxDecoration(
-                    color: Colors.blueAccent,
-                    borderRadius: BorderRadius.circular(2),
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4.0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+            children: [
+              if (!isMe && user?.image != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8.0),
+                  child: CircleAvatar(
+                    radius: 16,
+                    backgroundImage: user?.image != null && user!.image.isNotEmpty
+                        ? NetworkImage(user.image)
+                        : const AssetImage("assets/default_avatar.png") as ImageProvider,
                   ),
                 ),
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: MediaQuery.of(context).size.width * 0.7,
+                ),
+                child: Column(
+                  crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                  children: [
+                    if (!isMe)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4.0),
+                        child: Text(
+                          user?.name ?? 'Unknown',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    GestureDetector(
+                      onTap: () {
+                        if (message['type'] == 'image') {
+                          _showFullScreenImage(message['content']);
+                        } else if (message['type'] == 'video') {
+                          _playVideo(message['content']);
+                        }
+                      },
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: isMe ? Colors.blueAccent : Colors.grey[300],
+                          borderRadius: BorderRadius.only(
+                            topLeft: const Radius.circular(12),
+                            topRight: const Radius.circular(12),
+                            bottomLeft: isMe
+                                ? const Radius.circular(12)
+                                : const Radius.circular(4),
+                            bottomRight: isMe
+                                ? const Radius.circular(4)
+                                : const Radius.circular(12),
+                          ),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (message['type'] == 'image')
+                              Image.network(
+                                message['content'],
+                                width: 200,
+                                height: 200,
+                                fit: BoxFit.cover,
+                              )
+                            else if (message['type'] == 'video')
+                              _buildVideoThumbnail(message['content'])
+                            else if (message['type'] == 'audio')
+                              _buildAudioPlayer(message['content'])
+                            else if (message['type'] == 'file')
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Icon(Icons.insert_drive_file, size: 40),
+                                  Text(
+                                    'File Attachment',
+                                    style: TextStyle(
+                                      color: isMe ? Colors.white : Colors.black,
+                                    ),
+                                  ),
+                                ],
+                              )
+                            else
+                              Text(
+                                message['content'] ?? 'No content',
+                                style: TextStyle(
+                                  color: isMe ? Colors.white : Colors.black,
+                                ),
+                              ),
+                            const SizedBox(height: 4),
+                            Text(
+                              time,
+                              style: TextStyle(
+                                color: isMe ? Colors.white70 : Colors.black54,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showAddOptions() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(20),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              _buildOptionButton(Icons.image, "Gallery"),
-              _buildOptionButton(Icons.camera_alt, "Image"),
-              _buildOptionButton(Icons.audiotrack, "Audio"),
-              _buildOptionButton(Icons.videocam, "Video"),
-              _buildOptionButton(Icons.insert_drive_file, "Document"),
-              _buildOptionButton(Icons.location_on, "Location"),
+              if (isMe && user?.image != null)
+                Padding(
+                  padding: const EdgeInsets.only(left: 8.0),
+                  child: CircleAvatar(
+                    radius: 16,
+                    backgroundImage: user?.image != null && user!.image.isNotEmpty
+                        ? NetworkImage(user.image)
+                        : const AssetImage("assets/default_avatar.png") as ImageProvider,
+                  ),
+                ),
             ],
           ),
+        );
+      },
+    );
+  }
+
+  Widget _buildVideoThumbnail(String videoUrl) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Container(
+          width: 200,
+          height: 200,
+          color: Colors.black,
+          child: FutureBuilder(
+            future: _getVideoThumbnail(videoUrl),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.done &&
+                  snapshot.hasData) {
+                return Image.network(
+                  snapshot.data!,
+                  fit: BoxFit.cover,
+                );
+              }
+              return const Center(child: CircularProgressIndicator());
+            },
+          ),
+        ),
+        const Icon(Icons.play_circle_filled, size: 50, color: Colors.white),
+      ],
+    );
+  }
+
+  Future<String> _getVideoThumbnail(String videoUrl) async {
+    // For Cloudinary videos, you can generate a thumbnail by modifying the URL
+    // Example: https://res.cloudinary.com/demo/video/upload/w_300,h_300,c_thumb/your_video.mp4
+    // Replace the extension with .jpg or .png
+    if (videoUrl.contains('cloudinary.com')) {
+      return videoUrl.replaceAll(RegExp(r'\.(mp4|mov|avi|mkv|webm)$'), '.jpg');
+    }
+    // For other video URLs, you might need a different approach
+    return 'https://via.placeholder.com/200x200?text=Video';
+  }
+
+  Widget _buildAudioPlayer(String audioUrl) {
+    return Row(
+      children: [
+        IconButton(
+          icon: const Icon(Icons.play_arrow),
+          onPressed: () async {
+            try {
+              await _audioPlayer.setUrl(audioUrl);
+              await _audioPlayer.play();
+            } catch (e) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Failed to play audio: $e')),
+              );
+            }
+          },
+        ),
+        const Text('Audio Message'),
+      ],
+    );
+  }
+
+  void _showFullScreenImage(String imageUrl) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            iconTheme: const IconThemeData(color: Colors.white),
+          ),
+          body: Center(
+            child: PhotoView(
+              imageProvider: NetworkImage(imageUrl),
+              minScale: PhotoViewComputedScale.contained,
+              maxScale: PhotoViewComputedScale.covered * 2,
+            ),
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildOptionButton(IconData icon, String label) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        CircleAvatar(
-          radius: 30,
-          backgroundColor: Colors.blueAccent.withOpacity(0.2),
-          child: Icon(icon, color: Colors.blueAccent, size: 30),
+  void _playVideo(String videoUrl) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            iconTheme: const IconThemeData(color: Colors.white),
+          ),
+          body: Center(
+            child: FutureBuilder(
+              future: _initializeVideoPlayer(videoUrl),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.done) {
+                  return Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      AspectRatio(
+                        aspectRatio: _videoController!.value.aspectRatio,
+                        child: VideoPlayer(_videoController!),
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          isVideoPlaying ? Icons.pause : Icons.play_arrow,
+                          size: 40,
+                          color: Colors.blueAccent,
+                        ),
+                        onPressed: _toggleVideoPlayback,
+                      ),
+                    ],
+                  );
+                } else {
+                  return const CircularProgressIndicator();
+                }
+              },
+            ),
+          ),
         ),
-        const SizedBox(height: 5),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 12, color: Colors.black),
-        ),
-      ],
+      ),
     );
+  }
+
+  Future<void> _initializeVideoPlayer(String videoUrl) async {
+    _videoController?.dispose();
+    _videoController = VideoPlayerController.network(videoUrl);
+    await _videoController!.initialize();
+    await _videoController!.setLooping(true);
+    await _videoController!.play();
+    setState(() {
+      isVideoPlaying = true;
+    });
+  }
+
+  void _toggleVideoPlayback() {
+    if (_videoController != null) {
+      if (isVideoPlaying) {
+        _videoController?.pause();
+      } else {
+        _videoController?.play();
+      }
+      setState(() {
+        isVideoPlaying = !isVideoPlaying;
+      });
+    }
+  }
+
+  Future<List<String>> _getParticipantNames() async {
+    try {
+      final groupDoc = await FirebaseFirestore.instance.collection('groups').doc(widget.groupId).get();
+      if (!groupDoc.exists) {
+        print('Group document does not exist.');
+        return [];
+      }
+
+      final memberIds = List<String>.from(groupDoc['members'] ?? []);
+      print('Member IDs: $memberIds');
+
+      final userFutures = memberIds.map((id) => UserModel.getUserById(id)).toList();
+      final userDocs = await Future.wait(userFutures);
+
+      final memberNames = userDocs.map((user) => user?.name ?? 'Unknown').toList();
+      print('Member Names: $memberNames');
+
+      return memberNames;
+    } catch (e) {
+      print('Error fetching member names: $e');
+      return Future.error('Failed to load members');
+    }
+  }
+
+  void _playAudio(String audioUrl) {
+    if (_currentPlayingAudioUrl == audioUrl && isAudioPlaying) {
+      _audioPlayer.pause();
+      setState(() {
+        isAudioPlaying = false;
+      });
+    } else {
+      _audioPlayer.setUrl(audioUrl).then((_) => _audioPlayer.play());
+      _audioPlayer.playerStateStream.listen((playerState) {
+        setState(() {
+          isAudioPlaying = (playerState.playing);
+          _currentPlayingAudioUrl = audioUrl;
+        });
+      });
+    }
   }
 
   @override
@@ -305,136 +511,151 @@ class _GroupConversationScreenState extends State<GroupConversationScreen> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.blueAccent,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () {
-            Navigator.pop(context);
-          },
-        ),
+        foregroundColor: Colors.white,
         title: Row(
           children: [
             CircleAvatar(
-              backgroundImage: NetworkImage(widget.groupImageUrl),
+              backgroundImage: NetworkImage(groupImageUrl),
               radius: 20,
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: Text(
-                widget.groupName,
-                style: const TextStyle(color: Colors.white),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    groupName,
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  FutureBuilder<List<String>>(
+                    future: _getParticipantNames(),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Text(
+                          'Loading...',
+                          style: TextStyle(fontSize: 12),
+                        );
+                      }
+
+                      if (snapshot.hasError) {
+                        return const Text(
+                          'Error loading members',
+                          style: TextStyle(fontSize: 12),
+                        );
+                      }
+
+                      final memberNames = snapshot.data ?? [];
+                      final otherMembers = memberNames.where((name) => name != 'You').toList();
+                      final memberCount = otherMembers.length;
+
+                      return Text(
+                        'You and $memberCount members (${otherMembers.join(', ')})',
+                        style: const TextStyle(fontSize: 12),
+                        overflow: TextOverflow.ellipsis,
+                      );
+                    },
+                  ),
+                ],
               ),
             ),
           ],
         ),
         actions: [
           PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert, color: Colors.white),
-            onSelected: (value) {
-              if (value == 'add') {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Add Participant feature coming soon!')),
+            onSelected: (value) async {
+              if (value == 'edit_group') {
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => EditGroupScreen(
+                      groupId: widget.groupId,
+                      groupName: groupName,
+                      groupImageUrl: groupImageUrl,
+                      participants: participants,
+                    ),
+                  ),
                 );
-              } else if (value == 'leave') {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Leave Group feature coming soon!')),
-                );
+
+                if (result == true) {
+                  // Refresh group details after editing
+                  _refreshGroupDetails();
+                }
               }
             },
-            itemBuilder: (BuildContext context) => [
+            itemBuilder: (context) => [
               const PopupMenuItem(
-                value: 'add',
-                child: Text('Add Participant'),
-              ),
-              const PopupMenuItem(
-                value: 'leave',
-                child: Text('Leave Group'),
+                value: 'edit_group',
+                child: Text('Edit Group'),
               ),
             ],
           ),
         ],
-        centerTitle: true,
       ),
       body: Column(
         children: [
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.all(10),
-              itemCount: messages.length,
-              itemBuilder: (context, index) {
-                final message = messages[index];
-                bool isMe = message["sender"] == "Me";
-                return Align(
-                  alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 5),
-                    child: _buildTextMessage(message, isMe),
-                  ),
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('groups')
+                  .doc(widget.groupId)
+                  .collection('messages')
+                  .orderBy('timestamp', descending: false)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return const Center(
+                    child: Text('Start the conversation!'),
+                  );
+                }
+
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  _scrollController.jumpTo(
+                    _scrollController.position.maxScrollExtent,
+                  );
+                });
+
+                return ListView.builder(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.all(12),
+                  itemCount: snapshot.data!.docs.length,
+                  itemBuilder: (context, index) {
+                    return _buildMessageBubble(snapshot.data!.docs[index]);
+                  },
                 );
               },
             ),
           ),
-          if (_isRecording) _buildVoiceSpectrum(),
           Padding(
-            padding: const EdgeInsets.all(10),
+            padding: const EdgeInsets.all(8.0),
             child: Row(
               children: [
+                IconButton(
+                  icon: const Icon(Icons.attach_file),
+                  onPressed: _pickAndSendFile,
+                ),
                 Expanded(
-                  child: TextFormField(
+                  child: TextField(
                     controller: _controller,
                     decoration: InputDecoration(
-                      hintText: _isRecording ? "Slide left to cancel" : "Type a message",
-                      filled: true,
-                      fillColor: Colors.grey[200],
+                      hintText: 'Type a message...',
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(30),
+                        borderRadius: BorderRadius.circular(24),
                       ),
-                      suffixIcon: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: Icon(Icons.add, color: Colors.grey[700]),
-                            onPressed: _showAddOptions,
-                          ),
-                          GestureDetector(
-                            onLongPress: _startRecording,
-                            onLongPressUp: () {
-                              if (_dragDistance < -100) {
-                                _cancelRecording();
-                              } else {
-                                _sendVoiceNote();
-                              }
-                            },
-                            onHorizontalDragUpdate: (details) {
-                              setState(() {
-                                _dragDistance += details.delta.dx;
-                                if (_dragDistance < -100) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Slide left to cancel recording.')),
-                                  );
-                                }
-                              });
-                            },
-                            child: Icon(
-                              Icons.mic,
-                              color: _isRecording ? Colors.red : Colors.grey[700],
-                            ),
-                          ),
-                        ],
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
                       ),
                     ),
+                    onSubmitted: (_) => _sendMessage(),
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.translate, color: Colors.blueAccent),
-                  onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('AI Translate feature coming soon!')),
-                    );
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.send, color: Colors.blueAccent),
-                  onPressed: _sendMessage,
+                  icon: const Icon(Icons.send),
+                  onPressed: () => _sendMessage(),
                 ),
               ],
             ),
@@ -442,14 +663,5 @@ class _GroupConversationScreenState extends State<GroupConversationScreen> {
         ],
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _recorder.closeRecorder();
-    _player.closePlayer();
-    _recordingTimer?.cancel();
-    _spectrumTimer?.cancel();
-    super.dispose();
   }
 }

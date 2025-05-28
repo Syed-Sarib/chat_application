@@ -1,6 +1,9 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../services/cloudinary_service.dart'; // UPDATED: Import CloudinaryService
 
 class EditProfileScreen extends StatefulWidget {
   final String currentName;
@@ -21,6 +24,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late TextEditingController _descriptionController;
   File? _avatarImage;
   bool _isPickingImage = false;
+  bool _isSaving = false;
+  String _errorText = '';
+
+  final _firestore = FirebaseFirestore.instance;
+  final _auth = FirebaseAuth.instance;
 
   @override
   void initState() {
@@ -37,10 +45,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> _pickImage() async {
-    if (_isPickingImage) return; // Prevent multiple calls
-    setState(() {
-      _isPickingImage = true;
-    });
+    if (_isPickingImage) return;
+    setState(() => _isPickingImage = true);
 
     try {
       final picker = ImagePicker();
@@ -52,43 +58,80 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         });
       }
     } catch (e) {
-      print('Error picking image: $e');
+      print('Image pick error: $e');
     } finally {
-      setState(() {
-        _isPickingImage = false;
-      });
+      setState(() => _isPickingImage = false);
     }
   }
 
-  void _saveProfile() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text("Confirm Update"),
-          content: const Text("Do you really want to update your profile?"),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context); // Close the dialog
-              },
-              child: const Text("Cancel", style: TextStyle(color: Colors.grey)),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context); // Close the dialog
-                Navigator.pop(context, {
-                  'name': _nameController.text,
-                  'description': _descriptionController.text,
-                  'avatar': _avatarImage, // Pass the updated avatar
-                }); // Return updated data
-              },
-              child: const Text("Update", style: TextStyle(color: Colors.blue)),
-            ),
-          ],
+  Future<void> _saveProfile() async {
+    final updatedName = _nameController.text.trim();
+    final updatedDescription = _descriptionController.text.trim();
+    final currentUser = _auth.currentUser;
+
+    if (updatedName.isEmpty) {
+      setState(() => _errorText = 'Name cannot be empty');
+      return;
+    }
+
+    setState(() {
+      _isSaving = true;
+      _errorText = '';
+    });
+
+    try {
+      // Check if name is unique
+      final existing = await _firestore
+          .collection('users')
+          .where('name', isEqualTo: updatedName)
+          .get();
+
+      final isNameUsedByOthers = existing.docs.any((doc) => doc.id != currentUser!.uid);
+
+      if (isNameUsedByOthers) {
+        setState(() {
+          _isSaving = false;
+          _errorText = 'This name is already taken. Choose another one.';
+        });
+        return;
+      }
+
+      // Upload image to Cloudinary and get the URL
+      String? imageUrl;
+      if (_avatarImage != null) {
+        imageUrl = await CloudinaryService.uploadImage(_avatarImage!);
+        if (imageUrl == null) {
+          setState(() {
+            _isSaving = false;
+            _errorText = 'Failed to upload image. Try again.';
+          });
+          return;
+        }
+      }
+
+      // Save to Firestore
+      await _firestore.collection('users').doc(currentUser!.uid).update({
+        'name': updatedName,
+        'about': updatedDescription,
+        if (imageUrl != null) 'image': imageUrl,
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Profile updated successfully')),
         );
-      },
-    );
+        Navigator.pop(context, {
+          'name': updatedName,
+          'description': updatedDescription,
+          'avatar': _avatarImage,
+        });
+      }
+    } catch (e) {
+      print("Error: $e");
+      setState(() => _errorText = 'Failed to update profile. Try again.');
+    } finally {
+      setState(() => _isSaving = false);
+    }
   }
 
   @override
@@ -100,8 +143,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         iconTheme: const IconThemeData(color: Colors.white),
         titleTextStyle: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
         child: Column(
           children: [
             GestureDetector(
@@ -133,14 +176,25 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 border: OutlineInputBorder(),
               ),
             ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: _saveProfile,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue,
-                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 32),
+            if (_errorText.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Text(_errorText, style: const TextStyle(color: Colors.red)),
               ),
-              child: const Text("Save", style: TextStyle(color: Colors.white)),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _isSaving ? null : _saveProfile,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: _isSaving
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text("Save", style: TextStyle(color: Colors.white)),
+              ),
             ),
           ],
         ),
