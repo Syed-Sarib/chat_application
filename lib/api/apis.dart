@@ -16,16 +16,11 @@ class APIs {
   // Initialize user data
   static Future<void> init() async {
     final currentUser = auth.currentUser;
-    print('Current Firebase User: ${currentUser?.uid}'); // Debugging
-
     if (currentUser != null) {
       final userDoc = await firestore.collection('users').doc(currentUser.uid).get();
       if (userDoc.exists) {
         user = UserModel.fromJson(userDoc.data()!);
-        print('User initialized: ${user?.uid}'); // Debugging
       } else {
-        print('User document does not exist in Firestore. Creating a new document...');
-        // Create a new user document if it doesn't exist
         user = UserModel(
           uid: currentUser.uid,
           name: currentUser.displayName ?? 'Unknown',
@@ -36,10 +31,7 @@ class APIs {
           createdAt: DateTime.now(),
         );
         await firestore.collection('users').doc(currentUser.uid).set(user!.toJson());
-        print('New user document created: ${user?.uid}');
       }
-    } else {
-      print('No user is currently logged in.');
     }
   }
 
@@ -173,6 +165,15 @@ class APIs {
       });
     } catch (e) {
       print('Error removing friend: $e');
+    }
+  }
+
+  // Delete a single message
+  static Future<void> deleteMessage(String chatId, String messageId) async {
+    try {
+      await firestore.collection('chats').doc(chatId).collection('messages').doc(messageId).delete();
+    } catch (e) {
+      print('Error deleting message: $e');
     }
   }
 

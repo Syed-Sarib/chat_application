@@ -207,7 +207,7 @@ class _AddStatusScreenState extends State<AddStatusScreen> with TickerProviderSt
                       onPressed: _isUploading ? null : _submitStatus,
                       icon: const Icon(Icons.send),
                       label: Text(_isUploading ? "Posting..." : "Post Status"),
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent),
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent,foregroundColor: Colors.white),
                     ),
                   ),
                 ],

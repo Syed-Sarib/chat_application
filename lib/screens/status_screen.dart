@@ -138,10 +138,11 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Status'),
+        title: Text('Status', style: TextStyle(fontSize: 25, fontWeight: FontWeight.bold)),
         backgroundColor: Colors.blueAccent,
         centerTitle: true,
         foregroundColor: Colors.white,
+        
       ),
       body: _isLoading
           ? Center(child: CircularProgressIndicator(color: Colors.blueAccent))

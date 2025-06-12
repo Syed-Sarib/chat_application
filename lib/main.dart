@@ -2,7 +2,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '/provider/theme_provider.dart'; // Import ThemeProvider
+import '/provider/theme_provider.dart';
 import '/screens/welcome_screen.dart';
 import '/screens/login_screen.dart';
 import '/screens/signup_screen.dart';
@@ -20,17 +20,68 @@ import '/api/apis.dart';
 import '/screens/splash_screen.dart';
 import 'firebase_options.dart';
 
+// Custom light theme with ebebeb background
+final ThemeData customLightTheme = ThemeData(
+  scaffoldBackgroundColor: const Color(0xFFebebeb),
+  colorScheme: ColorScheme.light(
+    primary: Colors.blue, // Primary color for app bars
+    onPrimary: Colors.white, // Text/icon color on primary
+    surface: Colors.white, // Surface color for cards
+    onSurface: Colors.black87, // Text color on surface
+  ),
+  appBarTheme: const AppBarTheme(
+    backgroundColor: Colors.blue, // App bar background
+    elevation: 1,
+    iconTheme: IconThemeData(color: Colors.white),
+    titleTextStyle: TextStyle(
+      color: Colors.white, // White text for title
+      fontSize: 20,
+      fontWeight: FontWeight.bold,
+    ),
+    toolbarTextStyle: TextStyle(
+      color: Colors.white, // White text for toolbar items
+    ),
+  ),
+  cardTheme: CardTheme(
+    color: Colors.white,
+    elevation: 1,
+    margin: const EdgeInsets.all(8),
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(12),
+    ),
+  ),
+);
+
+// Custom dark theme
+final ThemeData customDarkTheme = ThemeData.dark().copyWith(
+  colorScheme: ColorScheme.dark(
+    primary: Colors.blueGrey,
+    onPrimary: Colors.white,
+    surface: Colors.grey,
+    onSurface: Colors.white,
+  ),
+  appBarTheme: const AppBarTheme(
+    backgroundColor: Colors.blueGrey,
+    titleTextStyle: TextStyle(
+      color: Colors.white,
+      fontSize: 20,
+      fontWeight: FontWeight.bold,
+    ),
+  ),
+);
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-
-  // Initialize APIs and user data
   await APIs.init();
 
   runApp(
     ChangeNotifierProvider(
-      create: (_) => ThemeProvider(),
-      child: ChatApp(),
+      create: (_) => ThemeProvider()..initializeThemes(
+        customLightTheme: customLightTheme,
+        customDarkTheme: customDarkTheme,
+      ),
+      child: const ChatApp(),
     ),
   );
 }
@@ -63,28 +114,65 @@ class _ChatAppState extends State<ChatApp> {
             return MaterialApp(
               title: 'Chat App',
               debugShowCheckedModeBanner: false,
-              theme: themeProvider.themeData, // Apply the selected theme
-              home: isConnected ? SplashScreen() : const NoInternetScreen(),
+              theme: themeProvider.currentLightTheme,
+              darkTheme: themeProvider.currentDarkTheme,
+              themeMode: themeProvider.isSystemTheme 
+                  ? ThemeMode.system 
+                  : (themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light),
+              home: isConnected ? const SplashScreen() : const NoInternetScreen(),
               routes: {
-                '/welcome': (context) => WelcomeScreen(),
-                '/login': (context) => LoginScreen(),
-                '/signup': (context) => SignupScreen(),
-                '/home': (context) => HomeScreen(),
-                '/profile': (context) => ProfileScreen(),
-                '/group': (context) => GroupScreen(),
-                '/friend_request': (context) => FriendRequestScreen(),
-                '/status': (context) => StatusScreen(),
-                '/call': (context) => CallScreen(
-                      callerName: 'Caller Name',
-                      callerImageUrl: 'https://via.placeholder.com/150',
-                    ),
-                '/chat': (context) => ChatScreen(),
-                '/otp_verification': (context) => OtpVerificationScreen(
-                      username: '',
-                      email: '',
-                      password: '',
-                      isLogin: true,
-                    ),
+                '/welcome': (context) => Scaffold(
+                  body: const WelcomeScreen(),
+                  backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+                ),
+                '/login': (context) => Scaffold(
+                  body: const LoginScreen(),
+                  backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+                ),
+                '/signup': (context) => Scaffold(
+                  body: const SignupScreen(),
+                  backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+                ),
+                '/home': (context) => Scaffold(
+                  body: const HomeScreen(),
+                  backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+                ),
+                '/profile': (context) => Scaffold(
+                  body: const ProfileScreen(),
+                  backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+                ),
+                '/group': (context) => Scaffold(
+                  body: const GroupScreen(),
+                  backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+                ),
+                '/friend_request': (context) => Scaffold(
+                  body: const FriendRequestScreen(),
+                  backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+                ),
+                '/status': (context) => Scaffold(
+                  body: const StatusScreen(),
+                  backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+                ),
+                '/call': (context) => Scaffold(
+                  body: CallScreen(
+                    callerName: 'Caller Name',
+                    callerImageUrl: 'https://via.placeholder.com/150',
+                  ),
+                  backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+                ),
+                '/chat': (context) => Scaffold(
+                  body: const ChatScreen(),
+                  backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+                ),
+                '/otp_verification': (context) => Scaffold(
+                  body: OtpVerificationScreen(
+                    username: '',
+                    email: '',
+                    password: '',
+                    isLogin: true,
+                  ),
+                  backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+                ),
               },
             );
           },

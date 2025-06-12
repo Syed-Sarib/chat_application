@@ -227,7 +227,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                       ),
                     ),
                   )
-                : Text("Chats", key: ValueKey("title"), style: TextStyle(color: Colors.white)),
+                : Text("Chats", key: ValueKey("title"), style: TextStyle(color: Colors.white, fontSize: 25, fontWeight: FontWeight.bold)),
           ),
           centerTitle: true,
           actions: [

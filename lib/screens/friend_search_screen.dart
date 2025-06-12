@@ -91,7 +91,7 @@ class _SearchFriendScreenState extends State<SearchFriendScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Search Friend"),
+        title: const Text("Search Friend",style: TextStyle(color: Colors.white,fontWeight: FontWeight.bold)),
         foregroundColor: Colors.white,
         backgroundColor: Colors.blueAccent,
         iconTheme: IconThemeData(color: Colors.white),

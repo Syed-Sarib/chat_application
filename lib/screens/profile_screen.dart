@@ -106,7 +106,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             pinned: true,
             expandedHeight: 20,
             automaticallyImplyLeading: false,
-            backgroundColor: Colors.blue,
+            backgroundColor: Colors.blueAccent,
             flexibleSpace: LayoutBuilder(
               builder: (context, constraints) {
                 return FlexibleSpaceBar(
@@ -145,7 +145,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               children: [
                 Stack(
                   children: [
-                    Container(height: 200, width: double.infinity, color: Colors.blue),
+                    Container(height: 200, width: double.infinity, color: Colors.blueAccent),
                     Container(
                       padding: const EdgeInsets.only(top: 120),
                       alignment: Alignment.topCenter,
@@ -271,7 +271,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     child: Column(
                       children: [
                         ListTile(
-                          leading: const Icon(Icons.lock, color: Colors.blue),
+                          leading: const Icon(Icons.lock, color: Colors.blueAccent),
                           title: const Text("Change Password"),
                           onTap: () {
                             Navigator.push(context, MaterialPageRoute(builder: (context) => const ChangePasswordScreen()));
@@ -279,13 +279,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                         const Divider(),
                         ListTile(
-                          leading: const Icon(Icons.color_lens, color: Colors.blue),
+                          leading: const Icon(Icons.color_lens, color: Colors.blueAccent),
                           title: const Text("Change Theme"),
                           onTap: _showThemeSelectionDialog,
                         ),
                         const Divider(),
                         ListTile(
-                          leading: const Icon(Icons.backup, color: Colors.blue),
+                          leading: const Icon(Icons.backup, color: Colors.blueAccent),
                           title: const Text("Chat Backup"),
                           onTap: () {
                             Navigator.push(context, MaterialPageRoute(builder: (context) => const ChatBackupScreen()));
@@ -293,7 +293,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                         const Divider(),
                         ListTile(
-                          leading: const Icon(Icons.star, color: Colors.blue),
+                          leading: const Icon(Icons.star, color: Colors.blueAccent),
                           title: const Text("Get Premium"),
                           onTap: () {
                             Navigator.push(context, MaterialPageRoute(builder: (context) => const GetPremiumScreen()));

@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 class ViewStatusScreen extends StatelessWidget {
   final String status;
 
-  const ViewStatusScreen({required this.status});
+  const ViewStatusScreen({super.key, required this.status});
 
   @override
   Widget build(BuildContext context) {

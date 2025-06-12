@@ -130,13 +130,13 @@ class _FriendRequestScreenState extends State<FriendRequestScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.green,
                       ),
-                      child: const Text("Accept"),
+                      child: const Text("Accept", style: TextStyle(color: Colors.white)),
                     ),
                     const SizedBox(width: 8),
                     ElevatedButton(
                       onPressed: () => _rejectRequest(senderId),
                       style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                      child: const Text("Reject"),
+                      child: const Text("Reject",style: TextStyle(color: Colors.white)),
                     ),
                   ],
                 ),

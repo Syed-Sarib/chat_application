@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import 'package:flutter_sound/flutter_sound.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -11,13 +10,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:video_player/video_player.dart';
 import 'package:photo_view/photo_view.dart';
+import 'package:chewie/chewie.dart';
 
 import '../../api/apis.dart';
 import '../../models/message.dart';
-import '../../widgets/message_card.dart';
 import '../services/cloudinary_service.dart';
 import '../screens/friend_info_screen.dart';
-
+import '../widgets/audio_message_player.dart';
 class ConversationScreen extends StatefulWidget {
   final String chatId;
   final String userId;
@@ -47,7 +46,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
   String? _currentUserId;
   
   // For media playback
-  VideoPlayerController? _videoController;
+  ChewieController? _chewieController;
   bool isVideoPlaying = false;
   bool isAudioPlaying = false;
   String? _currentPlayingAudioUrl;
@@ -97,7 +96,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
     _scrollController.dispose();
     _audioPlayer.dispose();
     _audioRecorder.closeRecorder();
-    _videoController?.dispose();
+    _chewieController?.dispose();
     super.dispose();
   }
 
@@ -174,6 +173,11 @@ class _ConversationScreenState extends State<ConversationScreen> {
           backgroundColor: Colors.black,
           appBar: AppBar(
             backgroundColor: Colors.transparent,
+            titleTextStyle: TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
             elevation: 0,
             iconTheme: const IconThemeData(color: Colors.white),
           ),
@@ -189,87 +193,103 @@ class _ConversationScreenState extends State<ConversationScreen> {
     );
   }
 
-  void _playVideo(String videoUrl) {
+  Future<void> _playVideo(String videoUrl) async {
+    final videoController = VideoPlayerController.network(videoUrl);
+    await videoController.initialize();
+    
+    final chewieController = ChewieController(
+      videoPlayerController: videoController,
+      autoPlay: true,
+      looping: true,
+    );
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => Scaffold(
           backgroundColor: Colors.black,
+          
           appBar: AppBar(
             backgroundColor: Colors.transparent,
+             titleTextStyle: TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+            foregroundColor: Colors.white,
             elevation: 0,
             iconTheme: const IconThemeData(color: Colors.white),
           ),
-          body: Center(
-            child: FutureBuilder(
-              future: _initializeVideoPlayer(videoUrl),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.done) {
-                  return Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      AspectRatio(
-                        aspectRatio: _videoController!.value.aspectRatio,
-                        child: VideoPlayer(_videoController!),
-                      ),
-                      IconButton(
-                        icon: Icon(
-                          isVideoPlaying ? Icons.pause : Icons.play_arrow,
-                          size: 40,
-                          color: Colors.blueAccent,
-                        ),
-                        onPressed: _toggleVideoPlayback,
-                      ),
-                    ],
-                  );
-                } else {
-                  return const CircularProgressIndicator();
-                }
-              },
+          body: SafeArea(
+            child: Chewie(
+              controller: chewieController,
             ),
           ),
         ),
       ),
-    );
-  }
-
-  Future<void> _initializeVideoPlayer(String videoUrl) async {
-    _videoController?.dispose();
-    _videoController = VideoPlayerController.network(videoUrl);
-    await _videoController!.initialize();
-    await _videoController!.setLooping(true);
-    await _videoController!.play();
-    setState(() {
-      isVideoPlaying = true;
+    ).then((_) {
+      videoController.dispose();
+      chewieController.dispose();
     });
   }
 
-  void _toggleVideoPlayback() {
-    if (_videoController != null) {
-      if (isVideoPlaying) {
-        _videoController?.pause();
-      } else {
-        _videoController?.play();
-      }
-      setState(() {
-        isVideoPlaying = !isVideoPlaying;
-      });
-    }
-  }
-
-  void _playAudio(String audioUrl) {
+  void _playAudio(String audioUrl) async {
     if (_currentPlayingAudioUrl == audioUrl && isAudioPlaying) {
-      _audioPlayer.pause();
+      await _audioPlayer.pause();
       setState(() {
         isAudioPlaying = false;
       });
     } else {
-      _audioPlayer.setUrl(audioUrl).then((_) => _audioPlayer.play());
-      _audioPlayer.playerStateStream.listen((playerState) {
+      try {
+        await _audioPlayer.setUrl(audioUrl);
+        await _audioPlayer.play();
         setState(() {
-          isAudioPlaying = (playerState.playing);
+          isAudioPlaying = true;
           _currentPlayingAudioUrl = audioUrl;
         });
-      });
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to play audio: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteMessage(Message message) async {
+    if (message.senderId != _currentUserId) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You can only delete your own messages')),
+      );
+      return;
+    }
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Message'),
+        content: const Text('Are you sure you want to delete this message?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+            
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        await APIs.deleteMessage(widget.chatId, message.id);
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete message: $e')),
+        );
+      }
     }
   }
 
@@ -277,84 +297,96 @@ class _ConversationScreenState extends State<ConversationScreen> {
     final isMe = message.senderId == _currentUserId;
     final time = DateFormat('h:mm a').format(message.timestamp);
 
-    return Align(
-      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.75,
-        ),
-        child: GestureDetector(
-          onTap: () {
-            if (message.type == MessageType.image) {
-              _showFullScreenImage(message.content);
-            } else if (message.type == MessageType.video) {
-              _playVideo(message.content);
-            }
-          },
-          child: Container(
-            margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: isMe ? Colors.blueAccent : Colors.grey[300],
-              borderRadius: BorderRadius.only(
-                topLeft: const Radius.circular(12),
-                topRight: const Radius.circular(12),
-                bottomLeft: isMe ? const Radius.circular(12) : const Radius.circular(4),
-                bottomRight: isMe ? const Radius.circular(4) : const Radius.circular(12),
-              ),
+    return GestureDetector(
+      onLongPress: () => _deleteMessage(message),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+        child: Align(
+          alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.75,
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (message.type == MessageType.image)
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.network(
-                      message.content,
-                      width: 200,
-                      height: 200,
-                      fit: BoxFit.cover,
-                    ),
-                  )
-                else if (message.type == MessageType.video)
-                  _buildVideoThumbnail(message.content)
-                else if (message.type == MessageType.audio)
-                  _buildAudioPlayer(message.content, isMe)
-                else if (message.type == MessageType.file)
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(Icons.insert_drive_file, size: 40),
-                      Text(
-                        'File Attachment',
-                        style: TextStyle(
-                          color: isMe ? Colors.white : Colors.black,
+            child: Container(
+              decoration: BoxDecoration(
+                color: isMe ? Colors.blueAccent : Colors.grey[300],
+                borderRadius: BorderRadius.only(
+                  topLeft: const Radius.circular(12),
+                  topRight: const Radius.circular(12),
+                  bottomLeft: isMe ? const Radius.circular(12) : const Radius.circular(4),
+                  bottomRight: isMe ? const Radius.circular(4) : const Radius.circular(12),
+                ),
+              ),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 8,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (message.type == MessageType.image)
+                    GestureDetector(
+                      onTap: () => _showFullScreenImage(message.content),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.network(
+                          message.content,
+                          width: 200,
+                          height: 200,
+                          fit: BoxFit.cover,
                         ),
                       ),
-                    ],
-                  )
-                else
-                  IntrinsicWidth(
-                    child: Text(
-                      message.content,
-                      style: TextStyle(
-                        color: isMe ? Colors.white : Colors.black,
+                    )
+                  else if (message.type == MessageType.video)
+                    GestureDetector(
+                      onTap: () => _playVideo(message.content),
+                      child: _buildVideoThumbnail(message.content),
+                    )
+                  else if (message.type == MessageType.audio)
+                    _buildAudioPlayer(message.content, isMe)
+                  else if (message.type == MessageType.file)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.insert_drive_file, size: 40),
+                        Text(
+                          'File Attachment',
+                          style: TextStyle(
+                            color: isMe ? Colors.white : Colors.black,
+                          ),
+                        ),
+                      ],
+                    )
+                  else
+                    IntrinsicWidth(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            message.content,
+                            style: TextStyle(
+                              color: isMe ? Colors.white : Colors.black,
+                            ),
+                          ),
+                          Align(
+                            alignment: Alignment.bottomRight,
+                            child: Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Text(
+                                time,
+                                style: TextStyle(
+                                  color: isMe ? Colors.white70 : Colors.black54,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
-                const SizedBox(height: 4),
-                Align(
-                  alignment: Alignment.bottomRight,
-                  child: Text(
-                    time,
-                    style: TextStyle(
-                      color: isMe ? Colors.white70 : Colors.black54,
-                      fontSize: 10,
-                    ),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -397,21 +429,11 @@ class _ConversationScreenState extends State<ConversationScreen> {
   }
 
   Widget _buildAudioPlayer(String audioUrl, bool isMe) {
-    return Row(
-      children: [
-        IconButton(
-          icon: Icon(
-            _currentPlayingAudioUrl == audioUrl && isAudioPlaying 
-                ? Icons.pause 
-                : Icons.play_arrow,
-            color: isMe ? Colors.white : Colors.black,
-          ),
-          onPressed: () => _playAudio(audioUrl),
-        ),
-        const Text('Audio Message', style: TextStyle(color: Colors.white)),
-      ],
-    );
-  }
+  return AudioMessagePlayer(
+    audioUrl: audioUrl,
+    isMe: isMe,
+  );
+}
 
   @override
   Widget build(BuildContext context) {

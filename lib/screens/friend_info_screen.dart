@@ -172,6 +172,7 @@ class _FriendInfoScreenState extends State<FriendInfoScreen> {
                       label: const Text("Send"),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.blueAccent,
+                        foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                         textStyle: const TextStyle(fontSize: 16),
                         shape: RoundedRectangleBorder(

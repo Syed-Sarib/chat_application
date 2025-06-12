@@ -10,8 +10,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:video_player/video_player.dart';
 import 'package:photo_view/photo_view.dart';
+import 'package:chewie/chewie.dart';
 import 'edit_group_screen.dart';
-
+import '../widgets/audio_message_player.dart';
 import '../../models/user.dart'; // Your UserModel class
 import '../../services/cloudinary_service.dart';
 
@@ -39,15 +40,15 @@ class _GroupConversationScreenState extends State<GroupConversationScreen> {
   final FlutterSoundRecorder _audioRecorder = FlutterSoundRecorder();
   final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
 
-  VideoPlayerController? _videoController;
-  final AudioPlayer _audioPlayer = AudioPlayer();
+  // For media playback
+  ChewieController? _chewieController;
   bool isVideoPlaying = false;
   bool isAudioPlaying = false;
   String? _currentPlayingAudioUrl;
 
-  bool _isRecording = false;
-  bool _isDeleting = false;
-  VideoPlayerController? _videoPlayerController;
+  final bool _isRecording = false;
+  final bool _isDeleting = false;
+  final AudioPlayer _audioPlayer = AudioPlayer();
 
   late String groupName;
   late String groupImageUrl;
@@ -89,7 +90,7 @@ class _GroupConversationScreenState extends State<GroupConversationScreen> {
     _scrollController.dispose();
     _audioPlayer.dispose();
     _audioRecorder.closeRecorder();
-    _videoPlayerController?.dispose();
+    _chewieController?.dispose();
     super.dispose();
   }
 
@@ -226,13 +227,7 @@ class _GroupConversationScreenState extends State<GroupConversationScreen> {
                         ),
                       ),
                     GestureDetector(
-                      onTap: () {
-                        if (message['type'] == 'image') {
-                          _showFullScreenImage(message['content']);
-                        } else if (message['type'] == 'video') {
-                          _playVideo(message['content']);
-                        }
-                      },
+                      onLongPress: () => _deleteMessage(messageDoc),
                       child: Container(
                         decoration: BoxDecoration(
                           color: isMe ? Colors.blueAccent : Colors.grey[300],
@@ -255,16 +250,25 @@ class _GroupConversationScreenState extends State<GroupConversationScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             if (message['type'] == 'image')
-                              Image.network(
-                                message['content'],
-                                width: 200,
-                                height: 200,
-                                fit: BoxFit.cover,
+                              GestureDetector(
+                                onTap: () => _showFullScreenImage(message['content']),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.network(
+                                    message['content'],
+                                    width: 200,
+                                    height: 200,
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
                               )
                             else if (message['type'] == 'video')
-                              _buildVideoThumbnail(message['content'])
+                              GestureDetector(
+                                onTap: () => _playVideo(message['content']),
+                                child: _buildVideoThumbnail(message['content']),
+                              )
                             else if (message['type'] == 'audio')
-                              _buildAudioPlayer(message['content'])
+                              _buildAudioPlayer(message['content'], isMe)
                             else if (message['type'] == 'file')
                               Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -279,20 +283,32 @@ class _GroupConversationScreenState extends State<GroupConversationScreen> {
                                 ],
                               )
                             else
-                              Text(
-                                message['content'] ?? 'No content',
-                                style: TextStyle(
-                                  color: isMe ? Colors.white : Colors.black,
+                              IntrinsicWidth(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      message['content'] ?? 'No content',
+                                      style: TextStyle(
+                                        color: isMe ? Colors.white : Colors.black,
+                                      ),
+                                    ),
+                                    Align(
+                                      alignment: Alignment.bottomRight,
+                                      child: Padding(
+                                        padding: const EdgeInsets.only(top: 4),
+                                        child: Text(
+                                          time,
+                                          style: TextStyle(
+                                            color: isMe ? Colors.white70 : Colors.black54,
+                                            fontSize: 10,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            const SizedBox(height: 4),
-                            Text(
-                              time,
-                              style: TextStyle(
-                                color: isMe ? Colors.white70 : Colors.black54,
-                                fontSize: 10,
-                              ),
-                            ),
                           ],
                         ),
                       ),
@@ -345,35 +361,17 @@ class _GroupConversationScreenState extends State<GroupConversationScreen> {
   }
 
   Future<String> _getVideoThumbnail(String videoUrl) async {
-    // For Cloudinary videos, you can generate a thumbnail by modifying the URL
-    // Example: https://res.cloudinary.com/demo/video/upload/w_300,h_300,c_thumb/your_video.mp4
-    // Replace the extension with .jpg or .png
     if (videoUrl.contains('cloudinary.com')) {
       return videoUrl.replaceAll(RegExp(r'\.(mp4|mov|avi|mkv|webm)$'), '.jpg');
     }
-    // For other video URLs, you might need a different approach
     return 'https://via.placeholder.com/200x200?text=Video';
   }
 
-  Widget _buildAudioPlayer(String audioUrl) {
-    return Row(
-      children: [
-        IconButton(
-          icon: const Icon(Icons.play_arrow),
-          onPressed: () async {
-            try {
-              await _audioPlayer.setUrl(audioUrl);
-              await _audioPlayer.play();
-            } catch (e) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Failed to play audio: $e')),
-              );
-            }
-          },
-        ),
-        const Text('Audio Message'),
-      ],
-    );
+  Widget _buildAudioPlayer(String audioUrl, bool isMe) {
+  return AudioMessagePlayer(
+    audioUrl: audioUrl,
+    isMe: isMe,
+  );
   }
 
   void _showFullScreenImage(String imageUrl) {
@@ -398,7 +396,16 @@ class _GroupConversationScreenState extends State<GroupConversationScreen> {
     );
   }
 
-  void _playVideo(String videoUrl) {
+  void _playVideo(String videoUrl) async {
+    final videoController = VideoPlayerController.network(videoUrl);
+    await videoController.initialize();
+    
+    final chewieController = ChewieController(
+      videoPlayerController: videoController,
+      autoPlay: true,
+      looping: true,
+    );
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => Scaffold(
@@ -408,60 +415,81 @@ class _GroupConversationScreenState extends State<GroupConversationScreen> {
             elevation: 0,
             iconTheme: const IconThemeData(color: Colors.white),
           ),
-          body: Center(
-            child: FutureBuilder(
-              future: _initializeVideoPlayer(videoUrl),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.done) {
-                  return Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      AspectRatio(
-                        aspectRatio: _videoController!.value.aspectRatio,
-                        child: VideoPlayer(_videoController!),
-                      ),
-                      IconButton(
-                        icon: Icon(
-                          isVideoPlaying ? Icons.pause : Icons.play_arrow,
-                          size: 40,
-                          color: Colors.blueAccent,
-                        ),
-                        onPressed: _toggleVideoPlayback,
-                      ),
-                    ],
-                  );
-                } else {
-                  return const CircularProgressIndicator();
-                }
-              },
+          body: SafeArea(
+            child: Chewie(
+              controller: chewieController,
             ),
           ),
         ),
       ),
-    );
-  }
-
-  Future<void> _initializeVideoPlayer(String videoUrl) async {
-    _videoController?.dispose();
-    _videoController = VideoPlayerController.network(videoUrl);
-    await _videoController!.initialize();
-    await _videoController!.setLooping(true);
-    await _videoController!.play();
-    setState(() {
-      isVideoPlaying = true;
+    ).then((_) {
+      videoController.dispose();
+      chewieController.dispose();
     });
   }
 
-  void _toggleVideoPlayback() {
-    if (_videoController != null) {
-      if (isVideoPlaying) {
-        _videoController?.pause();
-      } else {
-        _videoController?.play();
-      }
+  void _playAudio(String audioUrl) async {
+    if (_currentPlayingAudioUrl == audioUrl && isAudioPlaying) {
+      await _audioPlayer.pause();
       setState(() {
-        isVideoPlaying = !isVideoPlaying;
+        isAudioPlaying = false;
       });
+    } else {
+      try {
+        await _audioPlayer.setUrl(audioUrl);
+        await _audioPlayer.play();
+        setState(() {
+          isAudioPlaying = true;
+          _currentPlayingAudioUrl = audioUrl;
+        });
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to play audio: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteMessage(DocumentSnapshot messageDoc) async {
+    final message = messageDoc.data() as Map<String, dynamic>;
+    if (message['senderId'] != currentUserId) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You can only delete your own messages')),
+      );
+      return;
+    }
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Message'),
+        content: const Text('Are you sure you want to delete this message?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('groups')
+            .doc(widget.groupId)
+            .collection('messages')
+            .doc(messageDoc.id)
+            .delete();
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete message: $e')),
+        );
+      }
     }
   }
 
@@ -486,23 +514,6 @@ class _GroupConversationScreenState extends State<GroupConversationScreen> {
     } catch (e) {
       print('Error fetching member names: $e');
       return Future.error('Failed to load members');
-    }
-  }
-
-  void _playAudio(String audioUrl) {
-    if (_currentPlayingAudioUrl == audioUrl && isAudioPlaying) {
-      _audioPlayer.pause();
-      setState(() {
-        isAudioPlaying = false;
-      });
-    } else {
-      _audioPlayer.setUrl(audioUrl).then((_) => _audioPlayer.play());
-      _audioPlayer.playerStateStream.listen((playerState) {
-        setState(() {
-          isAudioPlaying = (playerState.playing);
-          _currentPlayingAudioUrl = audioUrl;
-        });
-      });
     }
   }
 
@@ -613,9 +624,7 @@ class _GroupConversationScreenState extends State<GroupConversationScreen> {
                 }
 
                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _scrollController.jumpTo(
-                    _scrollController.position.maxScrollExtent,
-                  );
+                  _scrollToBottom();
                 });
 
                 return ListView.builder(

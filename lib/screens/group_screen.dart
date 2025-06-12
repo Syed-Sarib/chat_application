@@ -53,8 +53,8 @@ class _GroupScreenState extends State<GroupScreen> {
 
     // Sort groups by recentTimestamp in descending order
     uniqueGroups.sort((a, b) {
-      final aTimestamp = (a.data() as Map<String, dynamic>)['recentTimestamp'] as Timestamp?;
-      final bTimestamp = (b.data() as Map<String, dynamic>)['recentTimestamp'] as Timestamp?;
+      final aTimestamp = (a.data())['recentTimestamp'] as Timestamp?;
+      final bTimestamp = (b.data())['recentTimestamp'] as Timestamp?;
       return (bTimestamp?.compareTo(aTimestamp ?? Timestamp(0, 0)) ?? 0);
     });
 
@@ -154,7 +154,7 @@ class _GroupScreenState extends State<GroupScreen> {
               )
             : const Text(
                 'Groups',
-                style: TextStyle(color: Colors.white),
+                style: TextStyle(color: Colors.white,fontSize: 25, fontWeight: FontWeight.bold),
               ),
         backgroundColor: Colors.blueAccent,
         actions: [
